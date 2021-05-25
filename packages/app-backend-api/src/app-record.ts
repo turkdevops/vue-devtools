@@ -5,6 +5,7 @@ export interface AppRecordOptions {
   app: App
   version: string
   types: { [key: string]: string | symbol }
+  meta?: any
 }
 
 export interface AppRecord {
@@ -15,7 +16,9 @@ export interface AppRecord {
   lastInspectedComponentId: string
   instanceMap: Map<string, ComponentInstance>
   rootInstance: ComponentInstance
-  timelineEventMap: Map<ID, TimelineEventOptions & WithId>
+  componentFilter?: string
+  perfGroupIds: Map<string, { groupId: number, time: number }>
+  meta: any
 }
 
 /**

@@ -1,14 +1,8 @@
-<template>
-  <div
-    v-if="version > currentSettingsVersion"
-    class="new-tag"
-  >
-    New
-  </div>
-</template>
 
-<script>
-export default {
+<script lang="ts">
+import { defineComponent } from '@vue/composition-api'
+
+export default defineComponent({
   inject: [
     'currentSettingsVersion'
   ],
@@ -19,8 +13,17 @@ export default {
       required: true
     }
   }
-}
+})
 </script>
+
+<template>
+  <div
+    v-if="version > currentSettingsVersion"
+    class="new-tag"
+  >
+    New
+  </div>
+</template>
 
 <style lang="stylus" scoped>
 .new-tag

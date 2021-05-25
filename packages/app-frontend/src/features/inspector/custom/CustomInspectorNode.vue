@@ -1,10 +1,11 @@
-<script>
-import { ref, computed, watch } from '@vue/composition-api'
-import { useCurrentInspector } from '.'
+<script lang="ts">
+import { ref, computed, watch, defineComponent } from '@vue/composition-api'
+import scrollIntoView from 'scroll-into-view-if-needed'
+import { useCurrentInspector } from './composable'
 
 const DEFAULT_EXPAND_DEPTH = 2
 
-export default {
+export default defineComponent({
   name: 'CustomInspectorNode',
 
   props: {
@@ -35,29 +36,53 @@ export default {
       selectNode(props.node)
     }
 
-    const selected = computed(() => inspector.value.selectedNode && inspector.value.selectedNode.id === props.node.id)
+    const selected = computed(() => inspector.value.selectedNodeId === props.node.id)
 
-    // Update node reference
-    watch(() => selected.value && inspector.value.selectedNode !== props.node, () => {
-      inspector.value.selectedNode = props.node
+    // Init selection if an id is set but the selection wasn't loaded yet
+    watch(() => selected.value && inspector.value.selectedNode !== props.node, value => {
+      if (value) {
+        selectNode(props.node)
+      }
     }, {
       immediate: true
     })
+
+    // Auto scroll
+
+    const toggleEl = ref()
+
+    function autoScroll () {
+      if (selected.value && toggleEl.value) {
+        /** @type {HTMLElement} */
+        const el = toggleEl.value
+        scrollIntoView(el, {
+          scrollMode: 'if-needed',
+          block: 'center',
+          inline: 'nearest',
+          behavior: 'smooth'
+        })
+      }
+    }
+
+    watch(selected, () => autoScroll())
+    watch(toggleEl, () => autoScroll())
 
     return {
       expanded,
       toggle,
       select,
-      selected
+      selected,
+      toggleEl
     }
   }
-}
+})
 </script>
 
 <template>
-  <div>
+  <div class="min-w-max">
     <div
-      class="font-mono cursor-pointer relative overflow-hidden z-10 rounded whitespace-no-wrap flex items-center pr-2 text-sm selectable-item"
+      ref="toggleEl"
+      class="font-mono cursor-pointer relative z-10 rounded whitespace-nowrap flex items-center pr-2 text-sm selectable-item"
       :class="{
         selected
       }"
@@ -89,11 +114,15 @@ export default {
       <span
         v-for="(tag, index) of node.tags"
         :key="index"
+        v-tooltip="{
+          content: tag.tooltip,
+          html: true
+        }"
         :style="{
           color: `#${tag.textColor.toString(16).padStart(6, '0')}`,
           backgroundColor: `#${tag.backgroundColor.toString(16).padStart(6, '0')}`,
         }"
-        class="tag px-1 rounded-sm ml-2"
+        class="tag px-1 rounded-sm ml-2 leading-snug"
       >
         {{ tag.label }}
       </span>

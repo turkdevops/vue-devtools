@@ -76,6 +76,13 @@ export default {
     }
   },
 
+  props: {
+    multiTypeProp: {
+      type: [Date, Boolean],
+      default: false
+    }
+  },
+
   data () {
     return {
       localDate: new Date(),
@@ -106,6 +113,13 @@ export default {
         b,
         c) {},
       veryLongText
+    }
+  },
+
+  computed: {
+    // eslint-disable-next-line vue/return-in-computed-property
+    throws () {
+      throw new Error('Some error')
     }
   },
 

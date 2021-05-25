@@ -1,20 +1,28 @@
-<script>
+<script lang="ts">
 import SplitPane from '@front/features/layout/SplitPane.vue'
+import PluginSourceIcon from '@front/features/plugin/PluginSourceIcon.vue'
 import TimelineView from './TimelineView.vue'
 import TimelineScrollbar from './TimelineScrollbar.vue'
 import LayerItem from './LayerItem.vue'
 import TimelineEventList from './TimelineEventList.vue'
 import TimelineEventInspector from './TimelineEventInspector.vue'
+import AskScreenshotPermission from './AskScreenshotPermission.vue'
 
-import { useTime, useLayers, resetTimeline, useCursor, useSelectedEvent, useScreenshots } from '.'
-import { computed, onMounted, ref, watch } from '@vue/composition-api'
+import { computed, onMounted, ref, watch, defineComponent } from '@vue/composition-api'
+import { onSharedDataChange } from '@front/util/shared-data'
 import { formatTime } from '@front/util/format'
 import SharedData from '@utils/shared-data'
-import { onSharedDataChange } from '../../util/shared-data'
-import AskScreenshotPermission from './AskScreenshotPermission.vue'
-import PluginSourceIcon from '../plugin/PluginSourceIcon.vue'
+import {
+  useTime,
+  useLayers,
+  resetTimeline,
+  useCursor,
+  useSelectedEvent,
+  useScreenshots,
+  supportsScreenshot
+} from './composable'
 
-export default {
+export default defineComponent({
   components: {
     SplitPane,
     LayerItem,
@@ -34,7 +42,8 @@ export default {
       isLayerHidden,
       setLayerHidden,
       hoverLayerId,
-      selectedEventLayerId
+      selectedLayer,
+      selectLayer
     } = useLayers()
     const layersEl = ref()
 
@@ -54,9 +63,10 @@ export default {
       applyScroll()
     })
 
-    function onLayersScroll (event) {
-      if (event.currentTarget.scrollTop !== vScroll.value) {
-        vScroll.value = event.currentTarget.scrollTop
+    function onLayersScroll (event: WheelEvent) {
+      const target = event.currentTarget as HTMLElement
+      if (target.scrollTop !== vScroll.value) {
+        vScroll.value = target.scrollTop
       }
     }
 
@@ -100,6 +110,10 @@ export default {
     // Screenshots
 
     const askScreenshotPermission = ref(false)
+
+    if (!supportsScreenshot) {
+      SharedData.timelineScreenshots = false
+    }
 
     onSharedDataChange('timelineScreenshots', (value) => {
       if (value) {
@@ -152,16 +166,18 @@ export default {
       layersEl,
       onLayersScroll,
       hoverLayerId,
-      selectedEventLayerId,
+      selectedLayer,
+      selectLayer,
       allLayers,
       isLayerHidden,
       setLayerHidden,
       resetTimeline,
       formattedCursorTime,
-      askScreenshotPermission
+      askScreenshotPermission,
+      supportsScreenshot
     }
   }
-}
+})
 </script>
 
 <template>
@@ -174,11 +190,12 @@ export default {
     >
       <template #left>
         <div class="flex flex-col h-full">
-          <div class="h-4 flex-none border-b border-gray-200 dark:border-gray-900" />
+          <div class="h-4 flex-none border-b border-gray-200 dark:border-gray-800" />
 
           <div
             ref="layersEl"
             class="flex flex-col flex-1 overflow-y-auto"
+            data-scroller="layers"
             @scroll="onLayersScroll"
           >
             <LayerItem
@@ -186,10 +203,11 @@ export default {
               :key="layer.id"
               :layer="layer"
               :hover="hoverLayerId === layer.id"
-              :selected="selectedEventLayerId === layer.id"
+              :selected="selectedLayer === layer"
               class="flex-none"
-              @mouseover.native="hoverLayerId = layer.id"
-              @mouseout.native="hoverLayerId = null"
+              @mouseenter.native="hoverLayerId = layer.id"
+              @mouseleave.native="hoverLayerId = null"
+              @select="selectLayer(layer)"
             />
           </div>
         </div>
@@ -198,7 +216,7 @@ export default {
       <template #right>
         <SplitPane
           save-id="timeline-right"
-          :default-split="70"
+          :default-split="50"
           :max="85"
           dragger-offset="after"
         >
@@ -260,25 +278,27 @@ export default {
 
         <div
           style="max-height: 250px;"
-          class="overflow-y-auto"
+          class="overflow-x-hidden overflow-y-auto"
         >
           <div class="flex flex-col">
             <VueSwitch
               v-for="layer of allLayers"
               :key="layer.id"
               :value="!isLayerHidden(layer)"
-              class="extend-left px-2 py-1 hover:bg-green-100 dark-hover:bg-green-900"
+              class="extend-left px-2 py-1 hover:bg-green-100 dark:hover:bg-green-900"
               @update="value => setLayerHidden(layer, !value)"
             >
-              <div class="flex items-center space-x-2">
+              <div class="flex items-center space-x-2 max-w-xs">
                 <div
                   class="flex-none w-3 h-3 rounded-full"
                   :style="{
-                    backgroundColor: `#${layer.color.toString(16)}`
+                    backgroundColor: `#${layer.color.toString(16).padStart(6, '0')}`
                   }"
                 />
 
-                <span>{{ layer.label }}</span>
+                <div class="flex-1 truncate">
+                  {{ layer.label }}
+                </div>
 
                 <PluginSourceIcon
                   v-if="layer.pluginId"
@@ -308,6 +328,7 @@ export default {
       </VueSwitch>
 
       <VueSwitch
+        v-if="supportsScreenshot"
         v-model="$shared.timelineScreenshots"
         class="w-full px-4 py-1 extend-left"
       >

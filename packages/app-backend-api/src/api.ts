@@ -1,4 +1,4 @@
-import { Bridge, HookEvents, set } from '@vue-devtools/shared-utils'
+import { Bridge, hasPluginPermission, HookEvents, PluginPermission, set } from '@vue-devtools/shared-utils'
 import {
   Hooks,
   HookPayloads,
@@ -10,14 +10,15 @@ import {
   CustomInspectorOptions,
   EditStatePayload,
   WithId,
-  ComponentTreeNode
+  ComponentTreeNode,
+  ComponentDevtoolsOptions
 } from '@vue/devtools-api'
 import { DevtoolsHookable } from './hooks'
 import { BackendContext } from './backend-context'
 import { Plugin } from './plugin'
 
 let backendOn: DevtoolsHookable
-let pluginOn: DevtoolsHookable
+const pluginOn: DevtoolsHookable[] = []
 
 export class DevtoolsApi {
   bridge: Bridge
@@ -27,7 +28,6 @@ export class DevtoolsApi {
     this.bridge = bridge
     this.ctx = ctx
     if (!backendOn) { backendOn = new DevtoolsHookable(ctx) }
-    if (!pluginOn) { pluginOn = new DevtoolsHookable(ctx) }
   }
 
   get on () {
@@ -36,7 +36,9 @@ export class DevtoolsApi {
 
   async callHook<T extends Hooks> (eventType: T, payload: HookPayloads[T], ctx: BackendContext = this.ctx) {
     payload = await backendOn.callHandlers(eventType, payload, ctx)
-    payload = await pluginOn.callHandlers(eventType, payload, ctx)
+    for (const on of pluginOn) {
+      payload = await on.callHandlers(eventType, payload, ctx)
+    }
     return payload
   }
 
@@ -85,8 +87,9 @@ export class DevtoolsApi {
     return payload.componentTreeData
   }
 
-  async visitComponentTree (instance: ComponentInstance, treeNode: ComponentTreeNode, filter: string = null) {
+  async visitComponentTree (instance: ComponentInstance, treeNode: ComponentTreeNode, filter: string = null, app: App) {
     const payload = await this.callHook(Hooks.VISIT_COMPONENT_TREE, {
+      app,
       componentInstance: instance,
       treeNode,
       filter
@@ -102,8 +105,9 @@ export class DevtoolsApi {
     return payload.parentInstances
   }
 
-  async inspectComponent (instance: ComponentInstance) {
+  async inspectComponent (instance: ComponentInstance, app: App) {
     const payload = await this.callHook(Hooks.INSPECT_COMPONENT, {
+      app,
       componentInstance: instance,
       instanceData: null
     })
@@ -126,6 +130,14 @@ export class DevtoolsApi {
     return payload.name
   }
 
+  async getComponentInstances (app: App) {
+    const payload = await this.callHook(Hooks.GET_COMPONENT_INSTANCES, {
+      app,
+      componentInstances: []
+    })
+    return payload.componentInstances
+  }
+
   async getElementComponent (element: HTMLElement | any) {
     const payload = await this.callHook(Hooks.GET_ELEMENT_COMPONENT, {
       element,
@@ -142,13 +154,25 @@ export class DevtoolsApi {
     return payload.rootElements
   }
 
-  async editComponentState (instance: ComponentInstance, dotPath: string, state: EditStatePayload) {
+  async editComponentState (instance: ComponentInstance, dotPath: string, type: string, state: EditStatePayload, app: App) {
+    const arrayPath = dotPath.split('.')
     const payload = await this.callHook(Hooks.EDIT_COMPONENT_STATE, {
+      app,
       componentInstance: instance,
-      path: dotPath.split('.'),
-      state
+      path: arrayPath,
+      type,
+      state,
+      set: (object, path = arrayPath, value = state.value, cb?) => set(object, path, value, cb || createDefaultSetCallback(state))
     })
     return payload.componentInstance
+  }
+
+  async getComponentDevtoolsOptions (instance: ComponentInstance): Promise<ComponentDevtoolsOptions> {
+    const payload = await this.callHook(Hooks.GET_COMPONENT_DEVTOOLS_OPTIONS, {
+      componentInstance: instance,
+      options: null
+    })
+    return payload.options || {}
   }
 
   async inspectTimelineEvent (eventData: TimelineEventOptions & WithId, app: App) {
@@ -183,26 +207,30 @@ export class DevtoolsApi {
   }
 
   async editInspectorState (inspectorId: string, app: App, nodeId: string, dotPath: string, state: EditStatePayload) {
-    const defaultSetCallback = (obj, field, value) => {
-      if (state.remove || state.newKey) {
-        if (Array.isArray(obj)) {
-          obj.splice(field, 1)
-        } else {
-          delete obj[field]
-        }
-      }
-      if (!state.remove) {
-        obj[state.newKey || field] = value
-      }
-    }
+    const arrayPath = dotPath.split('.')
     await this.callHook(Hooks.EDIT_INSPECTOR_STATE, {
       inspectorId,
       app,
       nodeId,
-      path: dotPath.split('.'),
+      path: arrayPath,
       state,
-      set: (object, path, value, cb?) => set(object, path, value, cb || defaultSetCallback)
+      set: (object, path = arrayPath, value = state.value, cb?) => set(object, path, value, cb || createDefaultSetCallback(state))
     })
+  }
+}
+
+function createDefaultSetCallback (state: EditStatePayload) {
+  return (obj, field, value) => {
+    if (state.remove || state.newKey) {
+      if (Array.isArray(obj)) {
+        obj.splice(field, 1)
+      } else {
+        delete obj[field]
+      }
+    }
+    if (!state.remove) {
+      obj[state.newKey || field] = value
+    }
   }
 }
 
@@ -210,21 +238,21 @@ export class DevtoolsPluginApiInstance implements DevtoolsPluginApi {
   bridge: Bridge
   ctx: BackendContext
   plugin: Plugin
+  on: DevtoolsHookable
 
   constructor (plugin: Plugin, ctx: BackendContext) {
     this.bridge = ctx.bridge
     this.ctx = ctx
     this.plugin = plugin
-    if (!pluginOn) { pluginOn = new DevtoolsHookable(ctx) }
-  }
-
-  get on () {
-    return pluginOn
+    this.on = new DevtoolsHookable(ctx, plugin)
+    pluginOn.push(this.on)
   }
 
   // Plugin API
 
   async notifyComponentUpdate (instance: ComponentInstance = null) {
+    if (!this.enabled || !this.hasPermission(PluginPermission.COMPONENTS)) return
+
     if (instance) {
       this.ctx.hook.emit(HookEvents.COMPONENT_UPDATED, ...await this.ctx.api.transformCall(HookEvents.COMPONENT_UPDATED, instance))
     } else {
@@ -233,23 +261,38 @@ export class DevtoolsPluginApiInstance implements DevtoolsPluginApi {
   }
 
   addTimelineLayer (options: TimelineLayerOptions) {
+    if (!this.enabled || !this.hasPermission(PluginPermission.TIMELINE)) return false
+
     this.ctx.hook.emit(HookEvents.TIMELINE_LAYER_ADDED, options, this.plugin)
+    return true
   }
 
   addTimelineEvent (options: TimelineEventOptions) {
+    if (!this.enabled || !this.hasPermission(PluginPermission.TIMELINE)) return false
+
     this.ctx.hook.emit(HookEvents.TIMELINE_EVENT_ADDED, options, this.plugin)
+    return true
   }
 
   addInspector (options: CustomInspectorOptions) {
+    if (!this.enabled || !this.hasPermission(PluginPermission.CUSTOM_INSPECTOR)) return false
+
     this.ctx.hook.emit(HookEvents.CUSTOM_INSPECTOR_ADD, options, this.plugin)
+    return true
   }
 
   sendInspectorTree (inspectorId: string) {
+    if (!this.enabled || !this.hasPermission(PluginPermission.CUSTOM_INSPECTOR)) return false
+
     this.ctx.hook.emit(HookEvents.CUSTOM_INSPECTOR_SEND_TREE, inspectorId, this.plugin)
+    return true
   }
 
   sendInspectorState (inspectorId: string) {
+    if (!this.enabled || !this.hasPermission(PluginPermission.CUSTOM_INSPECTOR)) return false
+
     this.ctx.hook.emit(HookEvents.CUSTOM_INSPECTOR_SEND_STATE, inspectorId, this.plugin)
+    return true
   }
 
   getComponentBounds (instance: ComponentInstance) {
@@ -258,5 +301,31 @@ export class DevtoolsPluginApiInstance implements DevtoolsPluginApi {
 
   getComponentName (instance: ComponentInstance) {
     return this.ctx.api.getComponentName(instance)
+  }
+
+  getComponentInstances (app: App) {
+    return this.ctx.api.getComponentInstances(app)
+  }
+
+  highlightElement (instance: ComponentInstance) {
+    if (!this.enabled || !this.hasPermission(PluginPermission.COMPONENTS)) return false
+
+    this.ctx.hook.emit(HookEvents.COMPONENT_HIGHLIGHT, instance.__VUE_DEVTOOLS_UID__, this.plugin)
+    return true
+  }
+
+  unhighlightElement () {
+    if (!this.enabled || !this.hasPermission(PluginPermission.COMPONENTS)) return false
+
+    this.ctx.hook.emit(HookEvents.COMPONENT_UNHIGHLIGHT, this.plugin)
+    return true
+  }
+
+  private get enabled () {
+    return hasPluginPermission(this.plugin.descriptor.id, PluginPermission.ENABLED)
+  }
+
+  private hasPermission (permission: PluginPermission) {
+    return hasPluginPermission(this.plugin.descriptor.id, permission)
   }
 }

@@ -1,36 +1,52 @@
 const webpack = require('webpack')
-const merge = require('webpack-merge')
-const { VueLoaderPlugin } = require('vue-loader')
+const { mergeWithRules } = require('webpack-merge')
 const FriendlyErrorsPlugin = require('friendly-errors-webpack-plugin')
+const { VueLoaderPlugin } = require('vue-loader')
+const path = require('path')
+const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin')
+const ESLintPlugin = require('eslint-webpack-plugin')
 
 exports.createConfig = (config, target = { chrome: 52, firefox: 48 }) => {
-  const bubleOptions = {
-    target,
-    objectAssign: 'Object.assign',
-    transforms: {
-      forOf: false,
-      modules: false
-    }
-  }
+  const mode = process.env.NODE_ENV === 'production' ? 'production' : 'development'
+  const workspace = path.basename(process.cwd())
 
   const baseConfig = {
-    mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
+    mode,
     resolve: {
-      extensions: ['.js', '.vue'],
+      extensions: ['.js', '.ts', '.vue'],
       alias: {
         '@front': '@vue-devtools/app-frontend/src',
         '@back': '@vue-devtools/app-backend-core/lib',
         '@utils': '@vue-devtools/shared-utils/lib'
       },
-      symlinks: false
+      // symlinks: false,
+      fallback: {
+        path: require.resolve('path-browserify')
+      }
     },
     module: {
       rules: [
         {
           test: /\.js$/,
-          loader: 'buble-loader',
           exclude: /node_modules|vue\/dist|vuex\/dist/,
-          options: bubleOptions
+          loader: 'buble-loader',
+          options: {
+            target,
+            objectAssign: 'Object.assign',
+            transforms: {
+              modules: false,
+              asyncAwait: false,
+              forOf: false
+            }
+          }
+        },
+        {
+          test: /\.ts$/,
+          loader: 'esbuild-loader',
+          options: {
+            loader: 'ts',
+            target: 'es2015'
+          }
         },
         {
           test: /\.vue$/,
@@ -39,7 +55,13 @@ exports.createConfig = (config, target = { chrome: 52, firefox: 48 }) => {
             compilerOptions: {
               preserveWhitespace: false
             },
-            transpileOptions: bubleOptions
+            transpileOptions: {
+              target,
+              objectAssign: 'Object.assign',
+              transforms: {
+                modules: false
+              }
+            }
           }
         },
         {
@@ -69,7 +91,7 @@ exports.createConfig = (config, target = { chrome: 52, firefox: 48 }) => {
         },
         {
           test: /\.(png|woff2|svg)$/,
-          loader: 'url-loader?limit=0'
+          type: 'asset/inline'
         }
       ]
     },
@@ -81,13 +103,33 @@ exports.createConfig = (config, target = { chrome: 52, firefox: 48 }) => {
       ...(process.env.VUE_DEVTOOL_TEST ? [] : [new FriendlyErrorsPlugin()]),
       new webpack.DefinePlugin({
         'process.env.RELEASE_CHANNEL': JSON.stringify(process.env.RELEASE_CHANNEL || 'stable')
+      }),
+      new ForkTsCheckerWebpackPlugin({
+        typescript: {
+          configFile: path.resolve(__dirname, '../../../tsconfig.json'),
+          extensions: {
+            vue: true
+          }
+        }
+      }),
+      new ESLintPlugin({
+        threads: true
       })
     ],
+    devtool: 'eval-source-map',
     devServer: {
       port: process.env.PORT
     },
     stats: {
       colors: true
+    },
+    // cache: {
+    //   type: 'filesystem',
+    //   cacheDirectory: path.resolve(process.cwd(), 'node_modules/.cache/webpack'),
+    //   name: `${workspace}-${mode}`
+    // },
+    snapshot: {
+      managedPaths: []
     }
   }
 
@@ -106,7 +148,7 @@ exports.createConfig = (config, target = { chrome: 52, firefox: 48 }) => {
             compress: {
               // turn off flags with small gains to speed up minification
               arrows: false,
-              collapse_vars: false, // 0.3kb
+              collapse_vars: false,
               comparisons: false,
               computed_props: false,
               hoist_funs: false,
@@ -124,10 +166,10 @@ exports.createConfig = (config, target = { chrome: 52, firefox: 48 }) => {
 
               // a few flags with noticable gains/speed ratio
               // numbers based on out of the box vendor bundle
-              booleans: true, // 0.7kb
-              if_return: true, // 0.4kb
-              sequences: true, // 0.7kb
-              unused: true, // 2.3kb
+              booleans: true,
+              if_return: true,
+              sequences: true,
+              unused: true,
 
               // required features to drop conditional branches
               conditionals: true,
@@ -138,13 +180,19 @@ exports.createConfig = (config, target = { chrome: 52, firefox: 48 }) => {
               safari10: true
             }
           },
-          sourceMap: false,
-          cache: true,
           parallel: true
         })
       ]
     }
   }
 
-  return merge.smart(baseConfig, config)
+  return mergeWithRules({
+    module: {
+      rules: {
+        test: 'match',
+        loader: 'replace',
+        options: 'merge'
+      }
+    }
+  })(baseConfig, config)
 }

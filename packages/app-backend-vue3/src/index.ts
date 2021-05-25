@@ -1,9 +1,9 @@
 import { DevtoolsBackend, BuiltinBackendFeature } from '@vue-devtools/app-backend-api'
 import { ComponentWalker } from './components/tree'
-import { editState, getInstanceDetails } from './components/data'
-import { getInstanceName } from './components/util'
+import { editState, getInstanceDetails, getCustomInstanceDetails } from './components/data'
+import { getInstanceName, getComponentInstances } from './components/util'
 import { getComponentInstanceFromElement, getInstanceOrVnodeRect, getRootElementsFromComponentInstance } from './components/el'
-import { HookEvents } from '@vue-devtools/shared-utils'
+import { backendInjections, HookEvents } from '@vue-devtools/shared-utils'
 
 export const backend: DevtoolsBackend = {
   frameworkVersion: 3,
@@ -35,20 +35,27 @@ export const backend: DevtoolsBackend = {
       payload.parentInstances = walker.getComponentParents(payload.componentInstance)
     })
 
-    api.on.inspectComponent(async (payload, ctx) => {
-      payload.instanceData = await getInstanceDetails(payload.componentInstance, ctx)
+    api.on.inspectComponent((payload, ctx) => {
+      backendInjections.getCustomInstanceDetails = getCustomInstanceDetails
+      backendInjections.instanceMap = ctx.currentAppRecord.instanceMap
+      backendInjections.isVueInstance = val => val._ && Object.keys(val._).includes('vnode')
+      payload.instanceData = getInstanceDetails(payload.componentInstance, ctx)
     })
 
-    api.on.getComponentName(async payload => {
-      payload.name = await getInstanceName(payload.componentInstance)
+    api.on.getComponentName(payload => {
+      payload.name = getInstanceName(payload.componentInstance)
     })
 
-    api.on.getComponentBounds(async payload => {
-      payload.bounds = await getInstanceOrVnodeRect(payload.componentInstance)
+    api.on.getComponentBounds(payload => {
+      payload.bounds = getInstanceOrVnodeRect(payload.componentInstance)
     })
 
     api.on.getElementComponent(payload => {
       payload.componentInstance = getComponentInstanceFromElement(payload.element)
+    })
+
+    api.on.getComponentInstances(payload => {
+      payload.componentInstances = getComponentInstances(payload.app)
     })
 
     api.on.getComponentRootElements(payload => {
@@ -57,6 +64,10 @@ export const backend: DevtoolsBackend = {
 
     api.on.editComponentState((payload, ctx) => {
       editState(payload, ctx)
+    })
+
+    api.on.getComponentDevtoolsOptions(payload => {
+      payload.options = payload.componentInstance.type.devtools
     })
 
     api.on.transformCall(payload => {

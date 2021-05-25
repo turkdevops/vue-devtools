@@ -1,13 +1,13 @@
-<script>
-import { onMounted, ref, provide } from '@vue/composition-api'
-import { useComponents } from '.'
-import { useComponentPick } from './pick'
+<script lang="ts">
 import SplitPane from '@front/features/layout/SplitPane.vue'
 import ComponentTreeNode from './ComponentTreeNode.vue'
 import SelectedComponentPane from './SelectedComponentPane.vue'
-import { onKeyDown, onKeyUp } from '@front/util/keyboard'
 
-export default {
+import { onMounted, ref, provide, defineComponent } from '@vue/composition-api'
+import { onKeyDown, onKeyUp } from '@front/util/keyboard'
+import { useComponentPick, useComponents } from './composable'
+
+export default defineComponent({
   components: {
     SplitPane,
     ComponentTreeNode,
@@ -42,7 +42,6 @@ export default {
 
     onKeyDown(event => {
       if (event.key === 'f' && event.ctrlKey) {
-        console.log('meow')
         treeFilterInput.value.focus()
         return false
       }
@@ -72,7 +71,7 @@ export default {
       treeScroller
     }
   }
-}
+})
 </script>
 
 <template>
@@ -88,7 +87,7 @@ export default {
             icon-left="search"
             placeholder="Find components..."
             select-all
-            class="search flat border-b border-gray-200 dark:border-gray-900"
+            class="search flat border-b border-gray-200 dark:border-gray-800"
           />
 
           <div

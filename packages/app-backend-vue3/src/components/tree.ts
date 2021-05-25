@@ -44,7 +44,7 @@ export class ComponentWalker {
    * @return {Vue|Array}
    */
   private async findQualifiedChildren (instance: any, depth: number): Promise<ComponentTreeNode[]> {
-    if (this.componentFilter.isQualified(instance)) {
+    if (this.componentFilter.isQualified(instance) && !instance.type.devtools?.hide) {
       return [await this.capture(instance, null, depth)]
     } else if (instance.subTree) {
       // TODO functional components
@@ -65,7 +65,7 @@ export class ComponentWalker {
    */
   private async findQualifiedChildrenFromList (instances, depth: number): Promise<ComponentTreeNode[]> {
     instances = instances
-      .filter(child => !isBeingDestroyed(child))
+      .filter(child => !isBeingDestroyed(child) && !child.type.devtools?.hide)
     if (!this.componentFilter.filter) {
       return Promise.all(instances.map((child, index, list) => this.capture(child, list, depth)))
     } else {
@@ -93,7 +93,7 @@ export class ComponentWalker {
         }
       })
     }
-    return list
+    return list.filter(child => !isBeingDestroyed(child) && !child.type.devtools?.hide)
   }
 
   private captureId (instance) {
@@ -148,10 +148,24 @@ export class ComponentWalker {
         .filter(Boolean))
     }
 
+    // keep-alive
+    if (instance.type.__isKeepAlive && instance.__v_cache) {
+      const cachedComponents = Array.from(instance.__v_cache.values()).map((vnode: any) => vnode.component).filter(Boolean)
+      for (const child of cachedComponents) {
+        if (!children.includes(child)) {
+          const node = await this.capture(child, null, depth + 1)
+          if (node) {
+            node.inactive = true
+            treeNode.children.push(node)
+          }
+        }
+      }
+    }
+
     // record screen position to ensure correct ordering
     if ((!list || list.length > 1) && !instance._inactive) {
       const rect = getInstanceOrVnodeRect(instance)
-      treeNode.positionTop = rect ? rect.positionTop : Infinity
+      treeNode.positionTop = rect ? rect.top : Infinity
     }
 
     if (instance.suspense) {
@@ -162,7 +176,7 @@ export class ComponentWalker {
       })
     }
 
-    return this.ctx.api.visitComponentTree(instance, treeNode, this.componentFilter.filter)
+    return this.ctx.api.visitComponentTree(instance, treeNode, this.componentFilter.filter, this.ctx.currentAppRecord.options.app)
   }
 
   /**

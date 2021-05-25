@@ -1,18 +1,35 @@
-<script>
-import { useInspectedEvent, useSelectedEvent } from '.'
-import Defer from '@front/mixins/defer'
-import { computed, onMounted, ref, watch } from '@vue/composition-api'
+<script lang="ts">
+import EmptyPane from '@front/features/layout/EmptyPane.vue'
 import TimelineEventListItem from './TimelineEventListItem.vue'
+
+import { computed, ref, watch, defineComponent } from '@vue/composition-api'
+import { getStorage, setStorage } from '@vue-devtools/shared-utils'
+import Defer from '@front/mixins/defer'
+import { useInspectedEvent, useSelectedEvent, selectEvent, useLayers } from './composable'
+import { useRoute, useRouter } from '@front/util/router'
 
 const itemHeight = 34
 
-export default {
-  components: { TimelineEventListItem },
+const STORAGE_TAB_ID = 'timeline.event-list.tab-id'
+
+export default defineComponent({
+  components: {
+    TimelineEventListItem,
+    EmptyPane
+  },
+
   mixins: [
     Defer()
   ],
 
   setup () {
+    const route = useRoute()
+    const router = useRouter()
+
+    const {
+      selectedLayer
+    } = useLayers()
+
     const {
       selectedEvent,
       selectedStackedEvents,
@@ -23,11 +40,24 @@ export default {
       inspectedEvent
     } = useInspectedEvent()
 
-    const layer = computed(() => selectedEvent.value.layer)
-
     // Tabs
 
-    const tabId = ref('nearby')
+    const tabId = computed({
+      get: () => route.value.query.tabId,
+      set: value => {
+        setStorage(STORAGE_TAB_ID, value)
+        router.push({
+          query: {
+            ...route.value.query,
+            tabId: value
+          }
+        })
+      }
+    })
+
+    if (!route.value.query.tabId) {
+      tabId.value = getStorage(STORAGE_TAB_ID, 'nearby')
+    }
 
     watch(selectedEvent, value => {
       if (value && !value.group && tabId.value === 'group') {
@@ -40,7 +70,7 @@ export default {
         case 'group':
           return selectedGroupEvents.value
         case 'all':
-          return selectedEvent.value ? selectedEvent.value.layer.events : []
+          return selectedLayer.value?.events ?? []
         case 'nearby':
         default:
           return selectedStackedEvents.value
@@ -84,11 +114,11 @@ export default {
       if (value) {
         onScroll()
       }
-    })
+    }, { immediate: true })
 
     watch(tabId, () => {
       scrollToInspectedEvent()
-    })
+    }, { immediate: true })
 
     function scrollToInspectedEvent () {
       if (!scroller.value) return
@@ -105,20 +135,22 @@ export default {
 
     watch(inspectedEvent, () => {
       checkScrollToInspectedEvent()
-    })
+    }, { immediate: true })
 
     function checkScrollToInspectedEvent () {
-      if (!scroller.value) return
+      requestAnimationFrame(() => {
+        if (!scroller.value) return
 
-      const scrollerEl = scroller.value.$el
+        const scrollerEl = scroller.value.$el
 
-      const index = filteredEvents.value.indexOf(inspectedEvent.value)
-      const minPosition = itemHeight * index
-      const maxPosition = minPosition + itemHeight
+        const index = filteredEvents.value.indexOf(inspectedEvent.value)
+        const minPosition = itemHeight * index
+        const maxPosition = minPosition + itemHeight
 
-      if (scrollerEl.scrollTop > minPosition || scrollerEl.scrollTop + scrollerEl.clientHeight < maxPosition) {
-        scrollToInspectedEvent()
-      }
+        if (scrollerEl.scrollTop > minPosition || scrollerEl.scrollTop + scrollerEl.clientHeight < maxPosition) {
+          scrollToInspectedEvent()
+        }
+      })
     }
 
     // Auto bottom scroll
@@ -135,7 +167,7 @@ export default {
       if (isAtScrollBottom.value) {
         scrollToBottom()
       }
-    })
+    }, { immediate: true })
 
     // List interactions
 
@@ -143,23 +175,9 @@ export default {
       inspectedEvent.value = event
     }
 
-    watch(selectedEvent, value => {
-      if (!inspectedEvent.value || !selectedStackedEvents.value.includes(inspectedEvent.value)) {
-        inspectedEvent.value = value
-      }
-    })
-
-    function selectEvent (event) {
-      if (event.stackParent) {
-        selectedEvent.value = event.stackParent
-      } else {
-        selectedEvent.value = event
-      }
-    }
-
     return {
       selectedEvent,
-      layer,
+      selectedLayer,
       selectedStackedEvents,
       tabId,
       scroller,
@@ -172,39 +190,42 @@ export default {
       onScroll
     }
   }
-}
+})
 </script>
 
 <template>
   <div
-    v-if="selectedEvent"
+    v-if="selectedEvent && selectedLayer"
     class="h-full flex flex-col"
   >
-    <div class="flex-none flex flex-col items-stretch border-gray-200 dark:border-gray-900 border-b">
-      <VueTabs
-        :tab-id.sync="tabId"
-        group-class="accent extend"
-        tab-class="flat"
+    <div class="flex-none flex flex-col items-stretch border-gray-200 dark:border-gray-800 border-b">
+      <VueGroup
+        v-model="tabId"
+        indicator
+        class="accent extend border-gray-200 dark:border-gray-800 border-b"
       >
-        <VueTab
-          id="nearby"
+        <VueGroupButton
+          value="nearby"
           :label="selectedStackedEvents.length > 1 ? 'Nearby' : 'Selected'"
+          class="flat"
         />
-        <VueTab
+        <VueGroupButton
           v-if="selectedEvent.group"
-          id="group"
+          value="group"
           label="Group"
+          class="flat"
         />
-        <VueTab
-          id="all"
+        <VueGroupButton
+          value="all"
           label="All"
+          class="flat"
         />
-      </VueTabs>
+      </VueGroup>
 
       <VueInput
         v-model="filter"
         icon-left="search"
-        :placeholder="`Filter ${layer.label}`"
+        :placeholder="`Filter ${selectedLayer.label}`"
         class="search flat"
       />
     </div>
@@ -226,4 +247,16 @@ export default {
       </template>
     </RecycleScroller>
   </div>
+
+  <EmptyPane
+    v-else
+    :icon="!selectedLayer ? 'layers' : 'inbox'"
+  >
+    <template v-if="!selectedLayer">
+      Select a layer to get started
+    </template>
+    <template v-else>
+      No events
+    </template>
+  </EmptyPane>
 </template>

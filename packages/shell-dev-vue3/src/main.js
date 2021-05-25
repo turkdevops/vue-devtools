@@ -1,11 +1,15 @@
 import { createApp, h } from 'vue'
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import App from './App.vue'
 import App3 from './App3.vue'
 import TestPlugin from './devtools-plugin'
+import store from './store'
+
+// eslint-disable-next-line no-extend-native
+Array.prototype.foo = 'bar'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
 
   routes: [
     {
@@ -20,12 +24,23 @@ const router = createRouter({
 })
 
 const app = createApp(App)
-app.use(TestPlugin)
+app.component('global', {
+  render: () => 'I\'m a global component'
+})
 app.use(router)
+app.use(store)
+app.use(TestPlugin)
 app.mount('#app')
 
 createApp({
-  render: () => h('h1', {}, 'App 2')
+  render: () => h('h1', 'App 2')
 }).mount('#app2')
 
 createApp(App3).mount('#app3')
+
+createApp({
+  render: () => h('h1', 'Ghost app'),
+  devtools: {
+    hide: true
+  }
+}).mount('#ghost-app')

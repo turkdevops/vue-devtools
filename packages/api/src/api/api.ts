@@ -1,6 +1,7 @@
 import { ComponentBounds, Hookable } from './hooks'
 import { Context } from './context'
 import { ComponentInstance, ComponentState, StateBase } from './component'
+import { App } from './app'
 import { ID } from './util'
 
 export interface DevtoolsPluginApi {
@@ -13,6 +14,9 @@ export interface DevtoolsPluginApi {
   sendInspectorState (inspectorId: string)
   getComponentBounds (instance: ComponentInstance): Promise<ComponentBounds>
   getComponentName (instance: ComponentInstance): Promise<string>
+  getComponentInstances (app: App): Promise<ComponentInstance[]>
+  highlightElement (instance: ComponentInstance)
+  unhighlightElement ()
 }
 
 export interface AppRecord {
@@ -26,6 +30,9 @@ export interface TimelineLayerOptions<TData = any, TMeta = any> {
   id: string
   label: string
   color: number
+  skipScreenshots?: boolean
+  groupsOnly?: boolean
+  ignoreNoDurationGroups?: boolean
   screenshotOverlayRender?: (event: TimelineEvent<TData, TMeta> & ScreenshotOverlayEvent, ctx: ScreenshotOverlayRenderContext) => ScreenshotOverlayRenderResult | Promise<ScreenshotOverlayRenderResult>
 }
 
@@ -68,6 +75,7 @@ export interface CustomInspectorOptions {
   icon?: string
   treeFilterPlaceholder?: string
   stateFilterPlaceholder?: string
+  noSelectionText?: string
 }
 
 export interface CustomInspectorNode {
@@ -81,6 +89,7 @@ export interface InspectorNodeTag {
   label: string
   textColor: number
   backgroundColor: number
+  tooltip?: string
 }
 
 export interface CustomInspectorState {

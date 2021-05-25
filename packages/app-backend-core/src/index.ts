@@ -1,7 +1,9 @@
 import {
   createBackendContext,
   BackendContext,
-  Plugin
+  Plugin,
+  BuiltinBackendFeature,
+  AppRecord
 } from '@vue-devtools/app-backend-api'
 import {
   Bridge,
@@ -9,7 +11,9 @@ import {
   BridgeEvents,
   BuiltinTabs,
   initSharedData,
-  BridgeSubscriptions
+  BridgeSubscriptions,
+  parse,
+  revive
 } from '@vue-devtools/shared-utils'
 import { hook } from './global-hook'
 import { subscribe, unsubscribe, isSubscribed } from './util/subscriptions'
@@ -25,10 +29,12 @@ import {
   getComponentInstance
 } from './component'
 import { addQueuedPlugins, addPlugin, sendPluginList, addPreviouslyRegisteredPlugins } from './plugin'
-import { PluginDescriptor, SetupFunction, TimelineLayerOptions, App, TimelineEventOptions, CustomInspectorOptions } from '@vue/devtools-api'
-import { registerApp, selectApp, mapAppRecord, getAppRecordId, waitForAppsRegistration } from './app'
-import { sendInspectorTree, getInspector, getInspectorWithAppId, sendInspectorState, editInspectorState } from './inspector'
+import { PluginDescriptor, SetupFunction, TimelineLayerOptions, TimelineEventOptions, CustomInspectorOptions } from '@vue/devtools-api'
+import { registerApp, selectApp, waitForAppsRegistration, sendApps, _legacy_getAndRegisterApps, getAppRecord } from './app'
+import { sendInspectorTree, getInspector, getInspectorWithAppId, sendInspectorState, editInspectorState, sendCustomInspectors } from './inspector'
 import { showScreenshot } from './timeline-screenshot'
+import { handleAddPerformanceTag, performanceMarkEnd, performanceMarkStart } from './perf'
+import { initOnPageConfig } from './page-config'
 
 let ctx: BackendContext
 let connected = false
@@ -45,15 +51,15 @@ export async function initBackend (bridge: Bridge) {
     persist: false
   })
 
+  initOnPageConfig()
+
   if (hook.Vue) {
     connect()
-    registerApp({
-      app: hook.Vue,
-      types: {},
-      version: hook.Vue.version
-    }, ctx)
+    _legacy_getAndRegisterApps(hook.Vue, ctx)
   } else {
-    hook.once(HookEvents.INIT, connect)
+    hook.once(HookEvents.INIT, (Vue) => {
+      _legacy_getAndRegisterApps(Vue, ctx)
+    })
   }
 
   hook.on(HookEvents.APP_ADD, async app => {
@@ -96,15 +102,13 @@ async function connect () {
 
   ctx.bridge.on(BridgeEvents.TO_BACK_TAB_SWITCH, async tab => {
     ctx.currentTab = tab
-    await flushAll()
+    await unHighlight()
   })
 
   // Apps
 
   ctx.bridge.on(BridgeEvents.TO_BACK_APP_LIST, () => {
-    ctx.bridge.send(BridgeEvents.TO_FRONT_APP_LIST, {
-      apps: ctx.appRecords.map(mapAppRecord)
-    })
+    sendApps(ctx)
   })
 
   ctx.bridge.on(BridgeEvents.TO_BACK_APP_SELECT, async id => {
@@ -120,17 +124,26 @@ async function connect () {
   // Components
 
   ctx.bridge.on(BridgeEvents.TO_BACK_COMPONENT_TREE, ({ instanceId, filter }) => {
-    sendComponentTreeData(instanceId, filter, ctx)
+    ctx.currentAppRecord.componentFilter = filter
+    sendComponentTreeData(ctx.currentAppRecord, instanceId, filter, ctx)
   })
 
   ctx.bridge.on(BridgeEvents.TO_BACK_COMPONENT_SELECTED_DATA, (instanceId) => {
-    sendSelectedComponentData(instanceId, ctx)
+    sendSelectedComponentData(ctx.currentAppRecord, instanceId, ctx)
   })
 
   hook.on(HookEvents.COMPONENT_UPDATED, (app, uid) => {
-    const id = app ? getComponentId(app, uid, ctx) : ctx.currentInspectedComponentId
+    let id: string
+    let appRecord: AppRecord
+    if (app && uid != null) {
+      id = getComponentId(app, uid, ctx)
+      appRecord = getAppRecord(app, ctx)
+    } else {
+      id = ctx.currentInspectedComponentId
+      appRecord = ctx.currentAppRecord
+    }
     if (id && isSubscribed(BridgeSubscriptions.SELECTED_COMPONENT_DATA, sub => sub.payload.instanceId === id)) {
-      sendSelectedComponentData(id, ctx)
+      sendSelectedComponentData(appRecord, id, ctx)
     }
   })
 
@@ -145,25 +158,25 @@ async function connect () {
       }
     }
 
+    const appRecord = getAppRecord(app, ctx)
+
     const parentId = getComponentId(app, parentUid, ctx)
     if (isSubscribed(BridgeSubscriptions.COMPONENT_TREE, sub => sub.payload.instanceId === parentId)) {
-      // @TODO take into account current filter
       requestAnimationFrame(() => {
-        sendComponentTreeData(parentId, null, ctx)
+        sendComponentTreeData(appRecord, parentId, ctx.currentAppRecord.componentFilter, ctx)
       })
     }
 
     if (ctx.currentInspectedComponentId === id) {
-      sendSelectedComponentData(id, ctx)
+      sendSelectedComponentData(appRecord, id, ctx)
     }
   })
 
   hook.on(HookEvents.COMPONENT_REMOVED, (app, uid, parentUid) => {
     const parentId = getComponentId(app, parentUid, ctx)
     if (isSubscribed(BridgeSubscriptions.COMPONENT_TREE, sub => sub.payload.instanceId === parentId)) {
-      // @TODO take into account current filter
       requestAnimationFrame(() => {
-        sendComponentTreeData(parentId, null, ctx)
+        sendComponentTreeData(getAppRecord(app, ctx), parentId, ctx.currentAppRecord.componentFilter, ctx)
       })
     }
 
@@ -174,12 +187,12 @@ async function connect () {
     ctx.currentAppRecord.instanceMap.delete(id)
   })
 
-  ctx.bridge.on(BridgeEvents.TO_BACK_COMPONENT_EDIT_STATE, ({ instanceId, dotPath, value, newKey, remove }) => {
-    editComponentState(instanceId, dotPath, { value, newKey, remove }, ctx)
+  ctx.bridge.on(BridgeEvents.TO_BACK_COMPONENT_EDIT_STATE, ({ instanceId, dotPath, type, value, newKey, remove }) => {
+    editComponentState(instanceId, dotPath, type, { value, newKey, remove }, ctx)
   })
 
   ctx.bridge.on(BridgeEvents.TO_BACK_COMPONENT_INSPECT_DOM, async ({ instanceId }) => {
-    const instance = getComponentInstance(instanceId, ctx)
+    const instance = getComponentInstance(ctx.currentAppRecord, instanceId, ctx)
     if (instance) {
       const [el] = await ctx.api.getComponentRootElements(instance)
       if (el) {
@@ -190,6 +203,38 @@ async function connect () {
     }
   })
 
+  ctx.bridge.on(BridgeEvents.TO_BACK_COMPONENT_SCROLL_TO, async ({ instanceId }) => {
+    const instance = getComponentInstance(ctx.currentAppRecord, instanceId, ctx)
+    if (instance) {
+      const [el] = await ctx.api.getComponentRootElements(instance)
+      if (el) {
+        el.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+          inline: 'center'
+        })
+        setTimeout(() => {
+          highlight(instance, ctx)
+        }, 500)
+        setTimeout(() => {
+          unHighlight()
+        }, 2000)
+      }
+    }
+  })
+
+  // Component perf
+
+  hook.on(HookEvents.PERFORMANCE_START, (app, uid, vm, type, time) => {
+    performanceMarkStart(app, uid, vm, type, time, ctx)
+  })
+
+  hook.on(HookEvents.PERFORMANCE_END, (app, uid, vm, type, time) => {
+    performanceMarkEnd(app, uid, vm, type, time, ctx)
+  })
+
+  handleAddPerformanceTag(ctx)
+
   // Highlighter
 
   ctx.bridge.on(BridgeEvents.TO_BACK_COMPONENT_MOUSE_OVER, instanceId => {
@@ -197,6 +242,14 @@ async function connect () {
   })
 
   ctx.bridge.on(BridgeEvents.TO_BACK_COMPONENT_MOUSE_OUT, () => {
+    unHighlight()
+  })
+
+  hook.on(HookEvents.COMPONENT_HIGHLIGHT, instanceId => {
+    highlight(ctx.currentAppRecord.instanceMap.get(instanceId), ctx)
+  })
+
+  hook.on(HookEvents.COMPONENT_UNHIGHLIGHT, () => {
     unHighlight()
   })
 
@@ -248,17 +301,7 @@ async function connect () {
   // Custom inspectors
 
   ctx.bridge.on(BridgeEvents.TO_BACK_CUSTOM_INSPECTOR_LIST, () => {
-    ctx.bridge.send(BridgeEvents.TO_FRONT_CUSTOM_INSPECTOR_LIST, {
-      inspectors: ctx.customInspectors.map(i => ({
-        id: i.id,
-        appId: getAppRecordId(i.app),
-        pluginId: i.plugin.descriptor.id,
-        label: i.label,
-        icon: i.icon,
-        treeFilterPlaceholder: i.treeFilterPlaceholder,
-        stateFilterPlaceholder: i.stateFilterPlaceholder
-      }))
-    })
+    sendCustomInspectors(ctx)
   })
 
   ctx.bridge.on(BridgeEvents.TO_BACK_CUSTOM_INSPECTOR_TREE, ({ inspectorId, appId, treeFilter }) => {
@@ -321,6 +364,18 @@ async function connect () {
     }
   })
 
+  // Misc
+
+  ctx.bridge.on(BridgeEvents.TO_BACK_LOG, (payload: { level: string, value: any, serialized?: boolean, revive?: boolean }) => {
+    let value = payload.value
+    if (payload.serialized) {
+      value = parse(value, payload.revive)
+    } else if (payload.revive) {
+      value = revive(value)
+    }
+    console[payload.level](value)
+  })
+
   // Plugins
 
   addPreviouslyRegisteredPlugins(ctx)
@@ -333,8 +388,15 @@ async function connect () {
   hook.on(HookEvents.SETUP_DEVTOOLS_PLUGIN, (pluginDescriptor: PluginDescriptor, setupFn: SetupFunction) => {
     addPlugin(pluginDescriptor, setupFn, ctx)
   })
-}
 
-async function flushAll () {
-  // @TODO notify frontend
+  // Legacy flush
+  hook.off('flush')
+  hook.on('flush', () => {
+    if (ctx.currentAppRecord?.backend.availableFeatures.includes(BuiltinBackendFeature.FLUSH)) {
+      sendComponentTreeData(ctx.currentAppRecord, '_root', ctx.currentAppRecord.componentFilter, ctx)
+      if (ctx.currentInspectedComponentId) {
+        sendSelectedComponentData(ctx.currentAppRecord, ctx.currentInspectedComponentId, ctx)
+      }
+    }
+  })
 }

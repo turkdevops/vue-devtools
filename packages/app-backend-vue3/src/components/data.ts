@@ -3,20 +3,21 @@ import { getInstanceName, getUniqueComponentId } from './util'
 import { camelize, get, set } from '@vue-devtools/shared-utils'
 import SharedData from '@vue-devtools/shared-utils/lib/shared-data'
 import { HookPayloads, Hooks, InspectedComponentData } from '@vue/devtools-api'
+import { returnError } from '../util'
 
 /**
  * Get the detailed information of an inspected instance.
  */
-export async function getInstanceDetails (instance: any, ctx: BackendContext): Promise<InspectedComponentData> {
+export function getInstanceDetails (instance: any, ctx: BackendContext): InspectedComponentData {
   return {
     id: getUniqueComponentId(instance, ctx),
     name: getInstanceName(instance),
     file: instance.type?.__file,
-    state: await getInstanceState(instance)
+    state: getInstanceState(instance)
   }
 }
 
-async function getInstanceState (instance) {
+function getInstanceState (instance) {
   return processProps(instance).concat(
     processState(instance),
     processSetupState(instance),
@@ -46,16 +47,20 @@ function processProps (instance) {
     propsData.push({
       type: 'props',
       key,
-      value: instance.props[key],
-      meta: propDefinition ? {
-        type: propDefinition.type ? getPropType(propDefinition.type) : 'any',
-        required: !!propDefinition.required,
-        ...propDefinition.default != null ? {
-          default: propDefinition.default.toString()
-        } : {}
-      } : {
-        type: 'invalid'
-      },
+      value: returnError(() => instance.props[key]),
+      meta: propDefinition
+        ? {
+            type: propDefinition.type ? getPropType(propDefinition.type) : 'any',
+            required: !!propDefinition.required,
+            ...propDefinition.default != null
+              ? {
+                  default: propDefinition.default.toString()
+                }
+              : {}
+          }
+        : {
+            type: 'invalid'
+          },
       editable: SharedData.editableProps
     })
   }
@@ -67,6 +72,9 @@ const fnTypeRE = /^(?:function|class) (\w+)/
  * Convert prop type constructor to string.
  */
 function getPropType (type) {
+  if (Array.isArray(type)) {
+    return type.map(t => getPropType(t)).join(' or ')
+  }
   const match = type.toString().match(fnTypeRE)
   return typeof type === 'function'
     ? (match && match[1]) || 'any'
@@ -103,7 +111,8 @@ function processState (instance) {
     ))
     .map(key => ({
       key,
-      value: data[key],
+      type: 'data',
+      value: returnError(() => data[key]),
       editable: true
     }))
 }
@@ -114,7 +123,7 @@ function processSetupState (instance) {
     .map(key => ({
       key,
       type: 'setup',
-      value: instance.setupState[key],
+      value: returnError(() => instance.setupState[key]),
       ...getSetupStateExtra(raw[key])
     }))
 }
@@ -177,25 +186,12 @@ function processComputed (instance) {
     const type = typeof def === 'function' && def.vuex
       ? 'vuex bindings'
       : 'computed'
-    // use try ... catch here because some computed properties may
-    // throw error during its evaluation
-    let computedProp = null
-    try {
-      computedProp = {
-        type,
-        key,
-        value: instance.proxy[key],
-        editable: typeof def.set === 'function'
-      }
-    } catch (e) {
-      computedProp = {
-        type,
-        key,
-        value: '(error during evaluation)'
-      }
-    }
-
-    computed.push(computedProp)
+    computed.push({
+      type,
+      key,
+      value: returnError(() => instance.proxy[key]),
+      editable: typeof def.set === 'function'
+    })
   }
 
   return computed
@@ -206,7 +202,7 @@ function processAttrs (instance) {
     .map(key => ({
       type: 'attrs',
       key,
-      value: instance.attrs[key]
+      value: returnError(() => instance.attrs[key])
     }))
 }
 
@@ -215,7 +211,7 @@ function processProvide (instance) {
     .map(key => ({
       type: 'provided',
       key,
-      value: instance.provides[key]
+      value: returnError(() => instance.provides[key])
     }))
 }
 
@@ -245,7 +241,7 @@ function processInject (instance) {
   return keys.map(({ key, originalKey }) => ({
     type: 'injected',
     key: originalKey && key !== originalKey ? `${originalKey} ➞ ${key}` : key,
-    value: instance.ctx[key]
+    value: returnError(() => instance.ctx[key])
   }))
 }
 
@@ -254,18 +250,19 @@ function processRefs (instance) {
     .map(key => ({
       type: 'refs',
       key,
-      value: instance.refs[key]
+      value: returnError(() => instance.refs[key])
     }))
 }
 
-export function editState ({ componentInstance, path, state }: HookPayloads[Hooks.EDIT_COMPONENT_STATE], ctx: BackendContext) {
+export function editState ({ componentInstance, path, state, type }: HookPayloads[Hooks.EDIT_COMPONENT_STATE], ctx: BackendContext) {
+  if (!['data', 'props', 'computed', 'setup'].includes(type)) return
   let target: any
   const targetPath: string[] = path.slice()
 
   if (Object.keys(componentInstance.props).includes(path[0])) {
     // Props
     target = componentInstance.props
-  } else if (Object.keys(componentInstance.devtoolsRawSetupState).includes(path[0])) {
+  } else if (componentInstance.devtoolsRawSetupState && Object.keys(componentInstance.devtoolsRawSetupState).includes(path[0])) {
     // Setup
     target = componentInstance.devtoolsRawSetupState
 
@@ -295,5 +292,34 @@ export function editState ({ componentInstance, path, state }: HookPayloads[Hook
         obj[state.newKey || field] = value
       }
     })
+  }
+}
+
+function reduceStateList (list) {
+  if (!list.length) {
+    return undefined
+  }
+  return list.reduce((map, item) => {
+    const key = item.type || 'data'
+    const obj = map[key] = map[key] || {}
+    obj[item.key] = item.value
+    return map
+  }, {})
+}
+
+export function getCustomInstanceDetails (instance) {
+  if (instance._) instance = instance._
+  const state = getInstanceState(instance)
+  return {
+    _custom: {
+      type: 'component',
+      id: instance.__VUE_DEVTOOLS_UID__,
+      display: getInstanceName(instance),
+      tooltip: 'Component instance',
+      value: reduceStateList(state),
+      fields: {
+        abstract: true
+      }
+    }
   }
 }

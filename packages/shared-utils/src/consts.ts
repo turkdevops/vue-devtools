@@ -17,6 +17,7 @@ export enum BridgeEvents {
   TO_BACK_REFRESH = 'b:refresh',
   /** Tab was switched */
   TO_BACK_TAB_SWITCH = 'b:tab:switch',
+  TO_BACK_LOG = 'b:log',
 
   // Apps
   /** App was registered */
@@ -88,12 +89,16 @@ export enum HookEvents {
   COMPONENT_ADDED = 'component:added',
   COMPONENT_REMOVED = 'component:removed',
   COMPONENT_EMIT = 'component:emit',
+  COMPONENT_HIGHLIGHT = 'component:highlight',
+  COMPONENT_UNHIGHLIGHT = 'component:unhighlight',
   SETUP_DEVTOOLS_PLUGIN = 'devtools-plugin:setup',
   TIMELINE_LAYER_ADDED = 'timeline:layer-added',
   TIMELINE_EVENT_ADDED = 'timeline:event-added',
   CUSTOM_INSPECTOR_ADD = 'custom-inspector:add',
   CUSTOM_INSPECTOR_SEND_TREE = 'custom-inspector:send-tree',
   CUSTOM_INSPECTOR_SEND_STATE = 'custom-inspector:send-state',
+  PERFORMANCE_START = 'perf:start',
+  PERFORMANCE_END = 'perf:end',
   /**
    * @deprecated
    */

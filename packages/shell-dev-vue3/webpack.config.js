@@ -1,14 +1,15 @@
 const path = require('path')
-const { createConfig } = require('@vue-devtools/build-tools')
 const { VueLoaderPlugin } = require('vue-loader')
+const vueLoaderPath = require.resolve('vue-loader')
 const openInEditor = require('launch-editor-middleware')
+const { createConfig } = require('@vue-devtools/build-tools')
 
 module.exports = createConfig({
   context: __dirname,
   entry: {
-    target: './src/main.js',
+    backend: require.resolve('@vue-devtools/shell-host/src/backend.js'),
     hook: require.resolve('@vue-devtools/shell-host/src/hook.js'),
-    backend: require.resolve('@vue-devtools/shell-host/src/backend.js')
+    target: './src/main.js'
   },
   output: {
     path: path.join(__dirname, '/build'),
@@ -25,15 +26,14 @@ module.exports = createConfig({
     rules: [
       {
         test: /\.vue$/,
-        loader: require.resolve('vue-loader')
+        loader: vueLoaderPath,
+        options: {}
       }
     ]
   },
-  devtool: '#cheap-module-source-map',
   devServer: {
     port: 8090,
-    quiet: true,
-    before (app) {
+    onBeforeSetupMiddleware (app) {
       app.use('/__open-in-editor', openInEditor())
     },
     proxy: {

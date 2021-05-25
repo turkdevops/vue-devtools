@@ -1,13 +1,16 @@
-<script>
-import StateInspector from '../inspector/StateInspector.vue'
+<script lang="ts">
+import StateInspector from '@front/features/inspector/StateInspector.vue'
+import EmptyPane from '@front/features/layout/EmptyPane.vue'
 
-import { computed } from '@vue/composition-api'
-import { useInspectedEvent, useSelectedEvent } from '.'
+import { computed, defineComponent } from '@vue/composition-api'
+import { useInspectedEvent, useSelectedEvent } from './composable'
 
-export default {
+export default defineComponent({
   components: {
-    StateInspector
+    StateInspector,
+    EmptyPane
   },
+
   setup () {
     const {
       inspectedEvent,
@@ -30,21 +33,21 @@ export default {
       isSelected
     }
   }
-}
+})
 </script>
 
 <template>
   <div
-    v-if="inspectedEventState"
+    v-if="inspectedEvent && inspectedEventState"
     class="flex flex-col h-full"
   >
-    <div class="header flex-none flex items-center border-b border-gray-200 dark:border-gray-900 p-2 pl-3 text-bluegray-900 dark:text-bluegray-100 space-x-2">
+    <div class="header flex-none flex items-center border-b border-gray-200 dark:border-gray-800 p-2 pl-3 text-bluegray-900 dark:text-bluegray-100 space-x-2">
       <div
         class="flex-none w-2 h-2 rounded-full border"
         :style="{
-          borderColor: `#${inspectedEvent.layer.color.toString(16)}`,
+          borderColor: `#${inspectedEvent.layer.color.toString(16).padStart(6, '0')}`,
           ... isSelected ? {} : {
-            backgroundColor: `#${inspectedEvent.layer.color.toString(16)}`
+            backgroundColor: `#${inspectedEvent.layer.color.toString(16).padStart(6, '0')}`
           }
         }"
       />
@@ -90,7 +93,18 @@ export default {
 
     <StateInspector
       :state="{
-        'event info': inspectedEventState
+        'event info': inspectedEventState,
+        ...inspectedEvent.group ? {
+          'group info': {
+            events: inspectedEvent.group.events.length,
+            duration: {
+              _custom: {
+                value: inspectedEvent.group.duration,
+                display: `${inspectedEvent.group.duration} ms`
+              }
+            }
+          }
+        } : {}
       }"
       class="flex-1 overflow-x-auto"
       :class="{
@@ -105,4 +119,11 @@ export default {
   >
     <VueLoadingIndicator class="primary overlay big" />
   </div>
+
+  <EmptyPane
+    v-else
+    icon="subject"
+  >
+    Select an event to display details
+  </EmptyPane>
 </template>

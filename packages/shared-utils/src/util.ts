@@ -4,7 +4,9 @@ import {
   getInstanceMap,
   getCustomInstanceDetails,
   getCustomRouterDetails,
-  getCustomStoreDetails
+  getCustomStoreDetails,
+  isVueInstance,
+  backendInjections
 } from './backend'
 import SharedData from './shared-data'
 import { isChrome, target } from './env'
@@ -106,7 +108,7 @@ export function specialTokenToString (value) {
  * (.i.e `{ _custom: { ... } }`)
  */
 class EncodeCache {
-  map: Map<any, Function>
+  map: Map<any, any>
 
   constructor () {
     this.map = new Map()
@@ -117,8 +119,8 @@ class EncodeCache {
    * @param {*} data Input data
    * @param {*} factory Function used to create the unique result
    */
-  cache (data: any, factory: Function) {
-    const cached = this.map.get(data)
+  cache<TResult, TData> (data: TData, factory: (data: TData) => TResult): TResult {
+    const cached: TResult = this.map.get(data)
     if (cached) {
       return cached
     } else {
@@ -183,12 +185,12 @@ function replacer (key) {
     } else if (proto === '[object Date]') {
       return `[native Date ${Date.prototype.toString.call(val)}]`
     } else if (proto === '[object Error]') {
-      return `[native Error ${val.message}]`
+      return `[native Error ${val.message}<>${val.stack}]`
     } else if (val.state && val._vm) {
       return encodeCache.cache(val, () => getCustomStoreDetails(val))
     } else if (val.constructor && val.constructor.name === 'VueRouter') {
       return encodeCache.cache(val, () => getCustomRouterDetails(val))
-    } else if (val._isVue) {
+    } else if (isVueInstance(val)) {
       return encodeCache.cache(val, () => getCustomInstanceDetails(val))
     } else if (typeof val.render === 'function') {
       return encodeCache.cache(val, () => getCustomComponentDefinitionDetails(val))
@@ -288,9 +290,11 @@ export function getCustomComponentDefinitionDetails (def) {
       type: 'component-definition',
       display,
       tooltip: 'Component definition',
-      ...def.__file ? {
-        file: def.__file
-      } : {}
+      ...def.__file
+        ? {
+            file: def.__file
+          }
+        : {}
     }
   }
 }
@@ -307,7 +311,8 @@ export function getCustomFunctionDetails (func) {
   // Trim any excess whitespace from the argument string
   const match = matches && matches[0]
   const args = typeof match === 'string'
-    ? `(${match.substr(1, match.length - 2).split(',').map(a => a.trim()).join(', ')})` : '(?)'
+    ? `(${match.substr(1, match.length - 2).split(',').map(a => a.trim()).join(', ')})`
+    : '(?)'
   const name = typeof func.name === 'string' ? func.name : ''
   return {
     _custom: {
@@ -347,16 +352,20 @@ export function getCustomRefDetails (instance, key, ref) {
   }
 }
 
-export function parse (data: any, revive: boolean) {
+export function parse (data: any, revive = false) {
   return revive
     ? parseCircularAutoChunks(data, reviver)
     : parseCircularAutoChunks(data)
 }
 
-const specialTypeRE = /^\[native (\w+) (.*)\]$/
+const specialTypeRE = /^\[native (\w+) (.*?)(<>((.|\s)*))?\]$/
 const symbolRE = /^\[native Symbol Symbol\((.*)\)\]$/
 
 function reviver (key, val) {
+  return revive(val)
+}
+
+export function revive (val) {
   if (val === UNDEFINED) {
     return undefined
   } else if (val === INFINITY) {
@@ -377,8 +386,12 @@ function reviver (key, val) {
     const [, string] = symbolRE.exec(val)
     return Symbol.for(string)
   } else if (specialTypeRE.test(val)) {
-    const [, type, string] = specialTypeRE.exec(val)
-    return new window[type](string)
+    const [, type, string,, details] = specialTypeRE.exec(val)
+    const result = new window[type](string)
+    if (type === 'Error' && details) {
+      result.stack = details
+    }
+    return result
   } else {
     return val
   }
@@ -572,28 +585,12 @@ export function has (object, path, parent = false) {
     return false
   }
 
-  const sections = Array.isArray(path) ? path : path.split('.')
+  const sections = Array.isArray(path) ? path.slice() : path.split('.')
   const size = !parent ? 1 : 2
   while (object && sections.length > size) {
     object = object[sections.shift()]
   }
   return object != null && Object.prototype.hasOwnProperty.call(object, sections[0])
-}
-
-export function scrollIntoView (scrollParent, el, center = true) {
-  const parentTop = scrollParent.scrollTop
-  const parentHeight = scrollParent.offsetHeight
-  const elBounds = el.getBoundingClientRect()
-  const parentBounds = scrollParent.getBoundingClientRect()
-  const top = elBounds.top - parentBounds.top + scrollParent.scrollTop
-  const height = el.offsetHeight
-  if (center) {
-    scrollParent.scrollTop = top + (height - parentHeight) / 2
-  } else if (top < parentTop) {
-    scrollParent.scrollTop = top
-  } else if (top + height > parentTop + parentHeight) {
-    scrollParent.scrollTop = top - parentHeight + height
-  }
 }
 
 export function focusInput (el) {
@@ -649,4 +646,8 @@ export function copyToClipboard (state) {
   dummyTextArea.select()
   document.execCommand('copy')
   document.body.removeChild(dummyTextArea)
+}
+
+export function isEmptyObject (obj) {
+  return obj === UNDEFINED || !obj || Object.keys(obj).length === 0
 }

@@ -1,58 +1,55 @@
 <script>
-import { onMounted } from '@vue/composition-api'
+import { defineComponent, computed } from '@vue/composition-api'
+import { useRoute } from '@front/util/router'
 
-export default {
-  setup () {
-    onMounted(() => {
-      if (typeof Headway !== 'undefined') {
-        // eslint-disable-next-line no-undef
-        Headway.init({
-          selector: '.changelog-button',
-          account: '7kY9Zy'
-        })
+export default defineComponent({
+  props: {
+    lastInspectorRoute: {
+      type: Object,
+      default: null
+    }
+  },
+
+  setup (props) {
+    const route = useRoute()
+    const groupValue = computed(() => {
+      if (route.value.matched.some(m => m.name === 'inspector')) {
+        return 'inspector'
+      } else if (route.value.matched.some(m => m.name === 'timeline')) {
+        return 'timeline'
       }
+      return null
     })
+
+    const targetInspectorRoute = computed(() => props.lastInspectorRoute ? props.lastInspectorRoute.targetRoute : { name: 'inspector-components' })
+
+    return {
+      groupValue,
+      targetInspectorRoute
+    }
   }
-}
+})
 </script>
 
 <template>
-  <div class="relative">
-    <VueButton
-      href="https://headwayapp.co/vue-js-devtools-changelog"
-      target="_blank"
-      class="flat logo-button"
-    >
-      <img
-        src="~@front/assets/vue-logo.svg"
-        alt="Vue logo"
-        class="w-10 h-10"
-      >
-    </VueButton>
-
-    <div class="changelog-button" />
-  </div>
+  <VueGroup
+    :value="groupValue"
+    indicator
+    class="primary"
+  >
+    <VueGroupButton
+      v-tooltip="'Inspector'"
+      :to="targetInspectorRoute"
+      value="inspector"
+      class="icon-button flat"
+      icon-left="explore"
+    />
+    <VueGroupButton
+      v-tooltip="'Timeline'"
+      :to="{ name: 'timeline' }"
+      value="timeline"
+      class="icon-button flat"
+      icon-left="line_style"
+    />
+  </VueGroup>
 </template>
-
-<style lang="postcss" scoped>
-.logo-button {
-  padding: 0;
-  width: 32px !important;
-}
-
-.changelog-button {
-  @apply absolute;
-  bottom: 0px;
-  right: -2px;
-
-  >>> .HW_badge_cont {
-    width: 16px;
-    height: 16px;
-  }
-
-  >>> .HW_badge {
-    top: 0px;
-    left: 0px;
-  }
-}
-</style>

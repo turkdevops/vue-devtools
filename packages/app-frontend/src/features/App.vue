@@ -1,19 +1,20 @@
-<script>
+<script lang="ts">
 import AppHeader from './header/AppHeader.vue'
 import AppConnecting from './connection/AppConnecting.vue'
 import AppDisconnected from './connection/AppDisconnected.vue'
 import ErrorOverlay from './error/ErrorOverlay.vue'
-import { useAppConnection } from './connection'
+
+import { onMounted, defineComponent } from '@vue/composition-api'
 import { isChrome, setStorage, getStorage } from '@vue-devtools/shared-utils'
 import SharedData, { watchSharedData, onSharedDataInit } from '@utils/shared-data'
 import { darkMode } from '@front/util/theme'
-import { onMounted } from '@vue/composition-api'
+import { useAppConnection } from './connection'
 
 const chromeTheme = isChrome ? chrome.devtools.panels.themeName : undefined
 
 const STORAGE_PREVIOUS_SESSION_THEME = 'previous-session-theme'
 
-export default {
+export default defineComponent({
   name: 'App',
 
   components: {
@@ -26,12 +27,14 @@ export default {
   setup () {
     const { isConnected, isInitializing } = useAppConnection()
 
-    function updateTheme (theme) {
+    function updateTheme (theme: string) {
       if (theme === 'dark' || theme === 'high-contrast' || (theme === 'auto' && chromeTheme === 'dark')) {
         document.body.classList.add('vue-ui-dark-mode')
+        document.body.classList.add('dark')
         darkMode.value = true
       } else {
         document.body.classList.remove('vue-ui-dark-mode')
+        document.body.classList.remove('dark')
         darkMode.value = false
       }
       if (theme === 'high-contrast') {
@@ -63,7 +66,7 @@ export default {
       isInitializing
     }
   }
-}
+})
 </script>
 
 <template>
@@ -84,7 +87,7 @@ export default {
     />
 
     <template v-else>
-      <AppHeader class="flex-none" />
+      <AppHeader class="flex-none relative z-10 border-b border-gray-200 dark:border-gray-800" />
 
       <router-view class="flex-1 overflow-auto" />
     </template>

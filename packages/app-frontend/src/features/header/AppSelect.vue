@@ -1,11 +1,12 @@
-<script>
-import { watch, computed } from '@vue/composition-api'
-import { useRouter } from '@front/util/router'
-import { useApps } from '../apps'
+<script lang="ts">
 import AppHeaderSelect from './AppHeaderSelect.vue'
-import { useOrientation } from '../layout/orientation'
 
-export default {
+import { watch, defineComponent } from '@vue/composition-api'
+import { useApps } from '@front/features/apps'
+import { useOrientation } from '@front/features/layout/orientation'
+import { useRouter } from '@front/util/router'
+
+export default defineComponent({
   components: {
     AppHeaderSelect
   },
@@ -24,7 +25,7 @@ export default {
       if (!currentApp.value && apps.value.length && currentAppId.value !== apps.value[0].id) {
         router.push({
           params: {
-            appId: apps.value[0].id
+            appId: apps.value[0].id.toString()
           }
         })
       }
@@ -39,7 +40,7 @@ export default {
       orientation
     }
   }
-}
+})
 </script>
 
 <template>

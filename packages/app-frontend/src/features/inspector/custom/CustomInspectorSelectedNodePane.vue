@@ -1,32 +1,37 @@
-<script>
-import { watch } from '@vue/composition-api'
-import { useCurrentInspector } from '.'
+<script lang="ts">
+import EmptyPane from '@front/features/layout/EmptyPane.vue'
+
+import { watch, defineComponent } from '@vue/composition-api'
+import { useCurrentInspector } from './composable'
 import StateInspector from '../StateInspector.vue'
 
-export default {
+export default defineComponent({
   components: {
-    StateInspector
+    StateInspector,
+    EmptyPane
   },
 
   setup () {
     const {
       currentInspector: inspector,
+      filteredState,
       refreshState,
       editState
     } = useCurrentInspector()
 
-    watch(() => inspector.value && inspector.value.selectedNode, value => {
-      if (value && !inspector.state) {
+    watch(() => inspector.value && inspector.value.selectedNodeId, value => {
+      if (value && !inspector.value.state) {
         refreshState()
       }
     })
 
     return {
       inspector,
+      filteredState,
       editState
     }
   }
-}
+})
 </script>
 
 <template>
@@ -34,7 +39,7 @@ export default {
     v-if="inspector.selectedNode"
     class="h-full flex flex-col"
   >
-    <div class="px-2 h-10 border-b border-gray-200 dark:border-gray-900 flex items-center flex-none">
+    <div class="px-2 h-10 border-b border-gray-200 dark:border-gray-800 flex items-center flex-none">
       <div>
         {{ inspector.selectedNode.label }}
       </div>
@@ -49,9 +54,16 @@ export default {
 
     <StateInspector
       v-if="inspector.state"
-      :state="inspector.state"
+      :state="filteredState"
       class="flex-1 overflow-y-auto"
       @edit-state="editState"
     />
   </div>
+
+  <EmptyPane
+    v-else-if="inspector.noSelectionText"
+    :icon="inspector.icon"
+  >
+    {{ inspector.noSelectionText }}
+  </EmptyPane>
 </template>

@@ -1,10 +1,27 @@
-<script>
+<script lang="ts">
 import * as PIXI from 'pixi.js-legacy'
 import { install as installUnsafeEval } from '@pixi/unsafe-eval'
-import { ref, onMounted, onUnmounted, watch, watchEffect } from '@vue/composition-api'
-import { useLayers, useTime, useSelectedEvent, onTimelineReset, onEventAdd, useCursor } from '.'
+import {
+  ref,
+  onMounted,
+  onUnmounted,
+  watch,
+  watchEffect,
+  defineComponent
+} from '@vue/composition-api'
 import Vue from 'vue'
-import { useApps } from '../apps'
+import {
+  useLayers,
+  useTime,
+  useSelectedEvent,
+  selectEvent,
+  onTimelineReset,
+  onEventAdd,
+  useCursor,
+  Layer,
+  TimelineEvent
+} from './composable'
+import { useApps } from '@front/features/apps'
 import { onKeyUp } from '@front/util/keyboard'
 import { useDarkMode } from '@front/util/theme'
 import SharedData from '@utils/shared-data'
@@ -14,9 +31,9 @@ const GROUP_SIZE = 6
 
 installUnsafeEval(PIXI)
 
-export default {
+export default defineComponent({
   setup () {
-    const wrapper = ref(null)
+    const wrapper = ref<HTMLElement>(null)
 
     const { currentAppId } = useApps()
     const { startTime, endTime, minTime, maxTime } = useTime()
@@ -24,9 +41,11 @@ export default {
 
     // Reset
 
-    const resetCbs = []
+    type ResetCb = () => void
 
-    function onReset (cb) {
+    const resetCbs: ResetCb[] = []
+
+    function onReset (cb: ResetCb) {
       resetCbs.push(cb)
     }
 
@@ -42,14 +61,10 @@ export default {
 
     // Pixi App
 
-    /** @type {PIXI.Application} */
-    let app
+    let app: PIXI.Application
 
-    /** @type {PIXI.Container} */
-    let verticalScrollingContainer
-
-    /** @type {PIXI.Container} */
-    let horizontalScrollingContainer
+    let verticalScrollingContainer: PIXI.Container
+    let horizontalScrollingContainer: PIXI.Container
 
     onMounted(() => {
       app = new PIXI.Application({
@@ -61,9 +76,9 @@ export default {
       app.stage.hitArea = new PIXI.Rectangle(0, 0, 100000, 100000)
       updateBackground()
       wrapper.value.appendChild(app.view)
-      app.view.style.opacity = 0
+      app.view.style.opacity = '0'
       app.renderer.on('postrender', () => {
-        app.view.style.opacity = 1
+        app.view.style.opacity = '1'
       })
 
       verticalScrollingContainer = new PIXI.Container()
@@ -95,12 +110,11 @@ export default {
       layers,
       vScroll,
       hoverLayerId,
-      selectedEventLayerId
+      selectedLayer
     } = useLayers()
 
-    /** @type {Container[]} */
-    let layerContainers = []
-    let layersMap = {}
+    let layerContainers: PIXI.Container[] = []
+    let layersMap: Record<Layer['id'], { layer: Layer, container: PIXI.Container }> = {}
 
     function initLayers () {
       let y = 0
@@ -116,6 +130,17 @@ export default {
           layer,
           container
         }
+      }
+    }
+
+    function updateLayerPositions () {
+      let y = 0
+      for (const layer of layers.value) {
+        const payload = layersMap[layer.id]
+        if (payload) {
+          payload.container.y = y
+        }
+        y += (layer.height + 1) * LAYER_SIZE
       }
     }
 
@@ -137,12 +162,13 @@ export default {
       resetLayers()
     })
 
-    watch(layers, () => resetLayers())
+    watch(() => layers.value.map(l => l.id).join(','), () => {
+      resetLayers()
+    })
 
     // Layer hover
 
-    /** @type {import('pixi.js').Graphics} */
-    let layerHoverEffect
+    let layerHoverEffect: PIXI.Graphics
 
     onMounted(() => {
       layerHoverEffect = new PIXI.Graphics()
@@ -151,7 +177,7 @@ export default {
       verticalScrollingContainer.addChild(layerHoverEffect)
     })
 
-    function getLayerY (layer) {
+    function getLayerY (layer: Layer) {
       return layers.value.slice(0, layers.value.indexOf(layer)).reduce((sum, layer) => sum + (layer.height + 1) * LAYER_SIZE, 0)
     }
 
@@ -164,7 +190,7 @@ export default {
           alpha: 1
         },
         {
-          id: hoverLayerId.value !== selectedEventLayerId.value ? selectedEventLayerId.value : null,
+          id: hoverLayerId.value !== selectedLayer.value?.id ? selectedLayer.value?.id : null,
           alpha: 0.5
         }
       ].filter(({ id }) => id != null)
@@ -178,7 +204,7 @@ export default {
       }
     }
 
-    function drawLayerBackground (layerId, alpha = 1) {
+    function drawLayerBackground (layerId: Layer['id'], alpha = 1) {
       const { layer } = layersMap[layerId]
       layerHoverEffect.beginFill(layer.color, alpha)
       layerHoverEffect.drawRect(0, getLayerY(layer), app.view.width, (layer.height + 1) * LAYER_SIZE)
@@ -188,14 +214,11 @@ export default {
       drawLayerBackgroundEffects()
     })
 
-    watch(selectedEventLayerId, () => {
+    watch(selectedLayer, () => {
       drawLayerBackgroundEffects()
     })
 
-    /**
-     * @param {MouseEvent} event
-     */
-    function updateLayerHover (event) {
+    function updateLayerHover (event: MouseEvent) {
       let { offsetY } = event
       offsetY -= verticalScrollingContainer.y
       if (offsetY >= 0) {
@@ -220,28 +243,99 @@ export default {
 
     const { selectedEvent } = useSelectedEvent()
 
-    let events = []
+    let events: TimelineEvent[] = []
 
-    function getEventPosition (event) {
+    function getEventPosition (event: TimelineEvent) {
       return (event.time - minTime.value) / (endTime.value - startTime.value) * app.view.width
     }
 
-    function updateEventPosition (event) {
-      event.container.x = getEventPosition(event)
+    const updateEventPositionQueue = new Set<TimelineEvent>()
+    let currentEventPositionUpdate: TimelineEvent = null
+    let updateEventPositionQueued = false
+
+    function queueEventPositionUpdate (...events: TimelineEvent[]) {
+      for (const e of events) {
+        if (!e.container) continue
+        const ignored = isEventIgnored(e)
+        e.container.visible = !ignored
+        if (ignored) continue
+        // Update horizontal position immediately
+        e.container.x = getEventPosition(e)
+        // Queue vertical position compute
+        updateEventPositionQueue.add(e)
+      }
+      if (!updateEventPositionQueued) {
+        updateEventPositionQueued = true
+        Vue.nextTick(() => {
+          nextEventPositionUpdate()
+          updateEventPositionQueued = false
+        })
+      }
+    }
+
+    function nextEventPositionUpdate () {
+      if (currentEventPositionUpdate) return
+      const event = currentEventPositionUpdate = updateEventPositionQueue.values().next().value
+      if (event) {
+        computeEventVerticalPosition(event)
+      }
+    }
+
+    function isEventIgnored (event: TimelineEvent) {
+      return event.layer.ignoreNoDurationGroups && event.group && event.group.duration <= 0
+    }
+
+    function computeEventVerticalPosition (event: TimelineEvent) {
+      const offset = event.layer.groupsOnly ? 0 : 100
 
       let y = 0
       if (event.group && event !== event.group.firstEvent) {
         // If the event is inside a group, just use the group position
         y = event.group.y
       } else {
+        const firstEvent = event.group ? event.group.firstEvent : event
+        const lastEvent = event.group ? event.group.lastEvent : event
+        const lastOffset = event.layer.groupsOnly && event.group?.duration > 0 ? -1 : 0
         // Check for 'collision' with other event groups
         const l = event.layer.groups.length
-        for (let i = 0; i < l; i++) {
-          const group = event.layer.groups[i]
-          if (group !== event.group && group.y === y && event.time >= group.firstEvent.time - 100 && event.time <= group.lastEvent.time + 100) {
-            y++
-            // We need to check all the layers again since we moved the event
-            i = 0
+        let checkAgain = true
+        while (checkAgain) {
+          checkAgain = false
+          for (let i = 0; i < l; i++) {
+            const otherGroup = event.layer.groups[i]
+            if (
+              // Different group
+              (
+                !event.group ||
+                event.group !== otherGroup
+              ) &&
+              // Same row
+              otherGroup.y === y &&
+              (
+                // Horizontal intersection (first event)
+                (
+                  firstEvent.time >= otherGroup.firstEvent.time - offset &&
+                  firstEvent.time <= otherGroup.lastEvent.time + offset + lastOffset
+                ) ||
+                // Horizontal intersection (last event)
+                (
+                  lastEvent.time >= otherGroup.firstEvent.time - offset - lastOffset &&
+                  lastEvent.time <= otherGroup.lastEvent.time + offset
+                )
+              )
+            ) {
+              // Collision!
+              if (event.group && event.group.duration > otherGroup.duration && firstEvent.time <= otherGroup.firstEvent.time) {
+                // Invert positions because current group has higher priority
+                queueEventPositionUpdate(otherGroup.firstEvent)
+              } else {
+                // Offset the current group/event
+                y++
+                // We need to check all the layers again since we moved the event
+                checkAgain = true
+                break
+              }
+            }
           }
         }
 
@@ -252,23 +346,30 @@ export default {
 
         // Might update the layer's height as well
         if (y + 1 > event.layer.height) {
-          event.layer.height = y + 1
+          const oldLayerHeight = event.layer.height
+          const newLayerHeight = event.layer.height = y + 1
+          if (oldLayerHeight !== newLayerHeight) {
+            updateLayerPositions()
+          }
         }
       }
       event.container.y = (y + 1) * LAYER_SIZE
+
+      // Next
+      updateEventPositionQueue.delete(event)
+      currentEventPositionUpdate = null
+      nextEventPositionUpdate()
     }
 
-    function addEvent (event, layerContainer) {
+    function addEvent (event: TimelineEvent, layerContainer: PIXI.Container) {
       // Container
       const eventContainer = new PIXI.Container()
       event.container = eventContainer
-      updateEventPosition(event)
       layerContainer.addChild(eventContainer)
 
       // Graphics
       const g = new PIXI.Graphics()
       event.g = g
-      refreshEventGraphics(event)
       eventContainer.addChild(g)
 
       // Group graphics
@@ -276,8 +377,8 @@ export default {
         if (event.group.firstEvent === event) {
           const groupG = new PIXI.Graphics()
           event.groupG = groupG
-          drawEventGroup(event)
           eventContainer.addChild(groupG)
+          drawEventGroup(event)
         } else if (event.group.lastEvent === event) {
           drawEventGroup(event.group.firstEvent)
           // We need to check for collisions again
@@ -286,6 +387,9 @@ export default {
       }
 
       events.push(event)
+
+      refreshEventGraphics(event)
+      queueEventPositionUpdate(event)
 
       return event
     }
@@ -303,16 +407,38 @@ export default {
       initEvents()
     })
 
-    function resetEvents () {
+    function clearEvents () {
       for (const e of events) {
         e.g.destroy()
         e.g = null
+
+        if (e.groupT) {
+          (e.groupT.mask as PIXI.Graphics).destroy()
+          e.groupT.destroy()
+          e.groupT = null
+        }
+
+        if (e.groupG) {
+          e.groupG.destroy()
+          e.groupG = null
+        }
+
+        e.container.destroy()
+        e.container = null
       }
       events = []
+    }
+
+    function resetEvents () {
+      clearEvents()
       initEvents()
     }
 
-    onEventAdd(event => {
+    onUnmounted(() => {
+      clearEvents()
+    })
+
+    onEventAdd((event: TimelineEvent) => {
       if (event.appId !== 'all' && event.appId !== currentAppId.value) return
 
       if (event.stackParent) {
@@ -339,9 +465,8 @@ export default {
     }
 
     function updateEvents () {
+      queueEventPositionUpdate(...events)
       for (const event of events) {
-        updateEventPosition(event)
-
         if (event.groupG) {
           drawEventGroup(event)
         }
@@ -356,23 +481,48 @@ export default {
 
     onMounted(() => {
       app.stage.addListener('click', event => {
-        // We find the nearest event from the mouse click position
-        let choice
-        let distance = Number.POSITIVE_INFINITY
-        for (const e of events) {
-          const globalPosition = e.g.getGlobalPosition()
-          const d = Math.abs(globalPosition.x - event.data.global.x) + Math.abs(globalPosition.y - event.data.global.y)
+        const targetX = event.data.global.x
+        const targetY = event.data.global.y
+        let choice: TimelineEvent
 
-          if (!choice || d < distance) {
-            choice = e
-            distance = d
+        let y = 0
+        for (const layer of layers.value) {
+          y += (layer.height + 1) * LAYER_SIZE
+          if (targetY < y) {
+            let distance = Number.POSITIVE_INFINITY
+            for (const e of layer.events) {
+              if (isEventIgnored(e)) continue
+
+              if (layer.groupsOnly) {
+                // We find the group inside of which the mouse is
+                const bounds = e.group.firstEvent.groupG.getBounds()
+                if (bounds.contains(targetX, targetY)) {
+                  choice = e
+                  break
+                }
+              } else {
+                if (!e.g) continue
+                // We find the nearest event from the mouse click position
+                const globalPosition = e.g.getGlobalPosition()
+                const d = Math.abs(globalPosition.x - targetX) + Math.abs(globalPosition.y - targetY)
+
+                if (!choice || d < distance) {
+                  choice = e
+                  distance = d
+                }
+              }
+            }
+            break
           }
         }
-        selectedEvent.value = choice
+
+        if (choice) {
+          selectEvent(choice)
+        }
       })
     })
 
-    function drawEvent (selected, event) {
+    function drawEvent (selected: boolean, event: TimelineEvent) {
       if (event) {
         let color = event.layer.color
         for (const subEvent of event.stackedEvents) {
@@ -389,17 +539,21 @@ export default {
           const g = event.g
           let size = event.stackedEvents.length > 1 ? 4 : 3
           g.clear()
-          if (selected) {
-            // Border-only style
-            size -= 0.5
-            g.lineStyle(1, color)
-            g.beginFill(darkMode.value ? 0x0b1015 : 0xffffff)
-            event.container.zIndex = 999999999
+          if (!event.layer.groupsOnly) {
+            if (selected) {
+              // Border-only style
+              size -= 0.5
+              g.lineStyle(1, color)
+              g.beginFill(darkMode.value ? 0x0b1015 : 0xffffff)
+              event.container.zIndex = 999999999
+            } else {
+              g.beginFill(color)
+              event.container.zIndex = size
+            }
+            g.drawCircle(0, 0, size)
           } else {
-            g.beginFill(color)
-            event.container.zIndex = size
+            drawEventGroup(event)
           }
-          g.drawCircle(0, 0, size)
         }
       }
     }
@@ -407,7 +561,7 @@ export default {
     const drawSelectedEvent = drawEvent.bind(null, true)
     const drawUnselectedEvent = drawEvent.bind(null, false)
 
-    function refreshEventGraphics (event) {
+    function refreshEventGraphics (event: TimelineEvent) {
       if (selectedEvent.value === event) {
         drawSelectedEvent(event)
       } else {
@@ -422,44 +576,109 @@ export default {
 
     // Event selection with keyboard
 
+    function selectPreviousEvent () {
+      let index
+      if (selectedEvent.value) {
+        index = events.indexOf(selectedEvent.value)
+      } else {
+        index = events.length
+      }
+
+      let fullLoops = 0
+      do {
+        index--
+        if (index < 0) {
+          index = events.length - 1
+          fullLoops++
+        }
+      } while (isEventIgnored(events[index]) && fullLoops < 2)
+
+      if (events[index]) {
+        selectEvent(events[index])
+      }
+    }
+
+    function selectNextEvent () {
+      let index
+      if (selectedEvent.value) {
+        index = events.indexOf(selectedEvent.value)
+      } else {
+        index = -1
+      }
+
+      let fullLoops = 0
+      do {
+        index++
+        if (index >= events.length) {
+          index = 0
+          fullLoops++
+        }
+      } while (isEventIgnored(events[index]) && fullLoops < 2)
+
+      if (events[index]) {
+        selectEvent(events[index])
+      }
+    }
+
     onKeyUp(event => {
       if (event.key === 'ArrowLeft') {
-        let index
-        if (selectedEvent.value) {
-          index = events.indexOf(selectedEvent.value) - 1
-          if (index < 0) {
-            index = events.length - 1
-          }
-        } else {
-          index = events.length - 1
-        }
-        selectedEvent.value = events[index]
+        selectPreviousEvent()
       } else if (event.key === 'ArrowRight') {
-        let index
-        if (selectedEvent.value) {
-          index = events.indexOf(selectedEvent.value) + 1
-          if (index >= events.length) {
-            index = 0
-          }
-        } else {
-          index = 0
-        }
-        selectedEvent.value = events[index]
+        selectNextEvent()
       }
     })
 
     // Event Groups
 
-    function drawEventGroup (event) {
+    function drawEventGroup (event: TimelineEvent) {
       if (event.groupG) {
+        const drawAsSelected = event === selectedEvent.value && event.layer.groupsOnly
+
         /** @type {PIXI.Graphics} */
         const g = event.groupG
         g.clear()
-        g.lineStyle(1, event.layer.color, 0.5)
-        g.beginFill(event.layer.color, 0.1)
         const size = getEventPosition(event.group.lastEvent) - getEventPosition(event.group.firstEvent)
-        // Some adjustements were made on the vertical position and size to snap border pixels to the screen's grid (LoDPI)
-        g.drawRoundedRect(-GROUP_SIZE, -GROUP_SIZE + 0.5, size + GROUP_SIZE * 2, GROUP_SIZE * 2 - 1, GROUP_SIZE)
+        if (event.layer.groupsOnly && !drawAsSelected) {
+          g.beginFill(event.layer.color, 0.5)
+        } else {
+          g.lineStyle(1, event.layer.color, 0.5)
+          g.beginFill(event.layer.color, 0.1)
+        }
+        if (event.layer.groupsOnly) {
+          g.drawRect(0, -LAYER_SIZE / 2, size - 1, LAYER_SIZE - 1)
+        } else {
+          // Some adjustements were made on the vertical position and size to snap border pixels to the screen's grid (LoDPI)
+          g.drawRoundedRect(-GROUP_SIZE, -GROUP_SIZE + 0.5, size + GROUP_SIZE * 2, GROUP_SIZE * 2 - 1, GROUP_SIZE)
+        }
+
+        // Title
+        if (event.layer.groupsOnly && event.title && size > 32) {
+          let t = event.groupT
+          if (!t) {
+            console.log('create group text')
+            t = event.groupT = new PIXI.Text(`${event.title} ${event.subtitle}`, {
+              fontSize: 10,
+              fill: darkMode.value ? 0xffffff : 0
+            })
+            t.y = -t.height / 2
+            event.container.addChild(t)
+
+            // Mask
+            const mask = new PIXI.Graphics()
+            event.container.addChild(mask)
+            t.mask = mask
+          }
+
+          const mask = t.mask as PIXI.Graphics
+          mask.clear()
+          mask.beginFill(0)
+          mask.drawRect(0, -LAYER_SIZE / 2, size - 1, LAYER_SIZE - 1)
+        } else if (event.groupT) {
+          const mask = event.groupT.mask as PIXI.Graphics
+          mask?.destroy()
+          event.groupT.destroy()
+          event.groupT = null
+        }
       }
     }
 
@@ -467,8 +686,7 @@ export default {
 
     const { cursorTime } = useCursor()
 
-    /** @type {PIXI.Graphics} */
-    let timeCursor
+    let timeCursor: PIXI.Graphics
 
     onMounted(() => {
       timeCursor = new PIXI.Graphics()
@@ -484,10 +702,7 @@ export default {
       timeCursor.lineTo(0.5, app.view.height)
     }
 
-    /**
-     * @param {MouseEvent} event
-     */
-    function updateCursorPosition (event) {
+    function updateCursorPosition (event: MouseEvent) {
       const { offsetX } = event
       timeCursor.x = offsetX
       timeCursor.visible = true
@@ -501,8 +716,7 @@ export default {
 
     // Time grid
 
-    /** @type {PIXI.Graphics} */
-    let timeGrid
+    let timeGrid: PIXI.Graphics
 
     onMounted(() => {
       timeGrid = new PIXI.Graphics()
@@ -562,10 +776,11 @@ export default {
     watch(startTime, () => queueCameraUpdate())
     watch(endTime, () => queueCameraUpdate())
 
-    /**
-     * @param {MouseWheelEvent} event
-     */
-    function onMouseWheel (event) {
+    onMounted(() => {
+      queueCameraUpdate()
+    })
+
+    function onMouseWheel (event: WheelEvent) {
       const size = endTime.value - startTime.value
       const viewWidth = wrapper.value.offsetWidth
 
@@ -578,8 +793,8 @@ export default {
         const center = size * centerRatio + startTime.value
 
         let newSize = size + event.deltaY / viewWidth * size * 2
-        if (newSize < 100) {
-          newSize = 100
+        if (newSize < 10) {
+          newSize = 10
         }
 
         let start = center - newSize * centerRatio
@@ -611,6 +826,17 @@ export default {
           }
           startTime.value = start
           endTime.value = start + size
+        } else if (event.deltaY !== 0) {
+          // Vertical scroll
+          const layersScroller = document.querySelector('[data-scroller="layers"]')
+          if (layersScroller) {
+            const speed = SharedData.menuStepScrolling ? 1 : LAYER_SIZE * 4
+            if (event.deltaY < 0) {
+              layersScroller.scrollTop -= speed
+            } else {
+              layersScroller.scrollTop += speed
+            }
+          }
         }
       }
     }
@@ -634,7 +860,7 @@ export default {
     // Resize
 
     function onResize () {
-      app.view.style.opacity = 0
+      app.view.style.opacity = '0'
       app.queueResize()
       queueEventsUpdate()
       drawLayerBackgroundEffects()
@@ -644,7 +870,7 @@ export default {
 
     // Events
 
-    function onMouseMove (event) {
+    function onMouseMove (event: MouseEvent) {
       updateLayerHover(event)
       updateCursorPosition(event)
     }
@@ -662,7 +888,7 @@ export default {
       onResize
     }
   }
-}
+})
 </script>
 
 <template>

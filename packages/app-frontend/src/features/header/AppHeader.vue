@@ -1,61 +1,30 @@
-<script>
-import { computed, ref, watch } from '@vue/composition-api'
-import { useRoute } from '@front/util/router'
-import { BridgeEvents } from '@vue-devtools/shared-utils'
-import AppMainMenu from './AppMainMenu.vue'
+<script lang="ts">
+import PluginSourceIcon from '@front/features/plugin/PluginSourceIcon.vue'
+import AppHeaderLogo from './AppHeaderLogo.vue'
 import AppHistoryNav from './AppHistoryNav.vue'
 import AppSelect from './AppSelect.vue'
 import AppHeaderSelect from './AppHeaderSelect.vue'
-import { useBridge } from '../bridge'
-import { useTabs } from './tabs'
-import { useInspectors } from '../inspector/custom'
-import PluginSourceIcon from '../plugin/PluginSourceIcon.vue'
+import AppMainMenu from './AppMainMenu.vue'
 
-export default {
+import { computed, ref, watch, defineComponent } from '@vue/composition-api'
+import { BridgeEvents } from '@vue-devtools/shared-utils'
+import { useRoute } from '@front/util/router'
+import { useBridge } from '@front/features/bridge'
+import { useInspectors } from '@front/features/inspector/custom/composable'
+import { useTabs } from './tabs'
+
+export default defineComponent({
   components: {
-    AppMainMenu,
+    AppHeaderLogo,
     AppHistoryNav,
     AppSelect,
     AppHeaderSelect,
+    AppMainMenu,
     PluginSourceIcon
   },
 
   setup () {
     const route = useRoute()
-
-    // Main routes
-
-    const defaultMainRoutes = computed(() => [
-      {
-        icon: 'explore',
-        label: 'Inspector',
-        matchRoute: 'inspector',
-        targetRoute: lastInspectorRoute.value ? lastInspectorRoute.value.targetRoute : { name: 'inspector-components' }
-      },
-      {
-        icon: 'line_style',
-        label: 'Timeline',
-        matchRoute: 'timeline',
-        targetRoute: { name: 'timeline' }
-      },
-      {
-        icon: 'extension',
-        label: 'Plugins',
-        matchRoute: 'plugins',
-        targetRoute: { name: 'plugins' }
-      },
-      {
-        icon: 'settings',
-        label: 'Settings',
-        matchRoute: 'global-settings',
-        targetRoute: { name: 'global-settings' }
-      }
-    ])
-
-    // @TODO support custom routes
-    const allMainRoutes = computed(() => defaultMainRoutes.value)
-
-    const currentMainRoute = computed(() => allMainRoutes.value.find(r => route.value.matched.some(m => m.name === r.matchRoute)))
 
     // Inspector routes
 
@@ -96,18 +65,17 @@ export default {
     })
 
     return {
-      allMainRoutes,
-      currentMainRoute,
       inspectorRoutes,
-      currentInspectorRoute
+      currentInspectorRoute,
+      lastInspectorRoute
     }
   }
-}
+})
 </script>
 
 <template>
-  <div class="border-b border-gray-200 dark:border-gray-900 flex items-center space-x-2 px-2 h-10">
-    <AppMainMenu />
+  <div class="flex items-center space-x-2 px-2 h-8">
+    <AppHeaderLogo />
 
     <AppHistoryNav />
 
@@ -115,10 +83,8 @@ export default {
 
     <img src="~@front/assets/breadcrumb-separator.svg">
 
-    <AppHeaderSelect
-      :items="allMainRoutes"
-      :selected-item="currentMainRoute"
-      @select="route => $router.push(route.targetRoute)"
+    <AppMainMenu
+      :last-inspector-route="lastInspectorRoute"
     />
 
     <template v-if="currentInspectorRoute">
@@ -164,13 +130,28 @@ export default {
 
         <VueDropdownButton
           :to="{
+            name: 'plugins'
+          }"
+        >
+          Devtools plugins...
+        </VueDropdownButton>
+
+        <VueDropdownButton
+          :to="{
             name: 'global-settings'
           }"
         >
           Global settings...
         </VueDropdownButton>
 
-        <div class="border-t border-gray-200 dark:border-gray-900 my-1" />
+        <div class="border-t border-gray-200 dark:border-gray-800 my-1" />
+
+        <VueDropdownButton
+          href="https://devtools.vuejs.org"
+          target="_blank"
+        >
+          Documentation
+        </VueDropdownButton>
 
         <VueDropdownButton
           href="https://new-issue.vuejs.org/?repo=vuejs/vue-devtools"

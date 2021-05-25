@@ -1,18 +1,19 @@
-<script>
-import { computed, toRefs, onMounted, ref, watchEffect, inject } from '@vue/composition-api'
+<script lang="ts">
+import { computed, toRefs, onMounted, ref, watch, defineComponent, PropType } from '@vue/composition-api'
+import { ComponentTreeNode } from '@vue/devtools-api'
+import scrollIntoView from 'scroll-into-view-if-needed'
 import { getComponentDisplayName, UNDEFINED } from '@utils/util'
 import SharedData from '@utils/shared-data'
-import { useComponent } from '.'
-import { useComponentHighlight } from './highlight'
+import { useComponent, useComponentHighlight } from './composable'
 
 const DEFAULT_EXPAND_DEPTH = 2
 
-export default {
+export default defineComponent({
   name: 'ComponentTreeNode',
 
   props: {
     instance: {
-      type: Object,
+      type: Object as PropType<ComponentTreeNode>,
       required: true
     },
 
@@ -29,11 +30,15 @@ export default {
 
     const componentHasKey = computed(() => (props.instance.renderKey === 0 || !!props.instance.renderKey) && props.instance.renderKey !== UNDEFINED)
 
-    const sortedChildren = computed(() => props.instance.children ? props.instance.children.slice().sort((a, b) => {
-      return a.top === b.top
-        ? a.id - b.id
-        : a.top - b.top
-    }) : [])
+    const sortedChildren = computed(() => props.instance.children
+      ? props.instance.children.slice().sort((a, b) => {
+        if (a.positionTop === b.positionTop) {
+          return a.id.localeCompare(b.id)
+        } else {
+          return a.positionTop - b.positionTop
+        }
+      })
+      : [])
 
     const {
       isSelected: selected,
@@ -46,7 +51,7 @@ export default {
 
     subscribeToComponentTree()
 
-    const toggleEl = ref(null)
+    const toggleEl = ref<HTMLElement>(null)
 
     onMounted(() => {
       if (isExpandedUndefined.value && props.depth < DEFAULT_EXPAND_DEPTH) {
@@ -60,19 +65,21 @@ export default {
 
     // Auto scroll
 
-    /** @type {import('@vue/composition-api').Ref<HTMLElement>} */
-    const treeScroller = inject('treeScroller')
-
-    watchEffect(() => {
-      if (selected.value && toggleEl.value && treeScroller.value) {
+    function autoScroll () {
+      if (selected.value && toggleEl.value) {
         /** @type {HTMLElement} */
         const el = toggleEl.value
-        const scroller = treeScroller.value
-        if (el.offsetTop + el.offsetHeight < scroller.scrollTop || el.offsetTop > scroller.scrollTop + scroller.offsetHeight) {
-          el.scrollIntoView()
-        }
+        scrollIntoView(el, {
+          scrollMode: 'if-needed',
+          block: 'center',
+          inline: 'nearest',
+          behavior: 'smooth'
+        })
       }
-    })
+    }
+
+    watch(selected, () => autoScroll())
+    watch(toggleEl, () => autoScroll())
 
     return {
       toggleEl,
@@ -87,16 +94,17 @@ export default {
       unhighlight
     }
   }
-}
+})
 </script>
 
 <template>
-  <div>
+  <div class="min-w-max">
     <div
       ref="toggleEl"
-      class="font-mono cursor-pointer relative overflow-hidden z-10 rounded whitespace-no-wrap flex items-center pr-2 text-sm selectable-item"
+      class="font-mono cursor-pointer relative z-10 rounded whitespace-nowrap flex items-center pr-2 text-sm selectable-item"
       :class="{
-        selected
+        selected,
+        'opacity-50': instance.inactive,
       }"
       :style="{
         paddingLeft: depth * 15 + 4 + 'px'
@@ -148,13 +156,25 @@ export default {
       <span class="flex items-center space-x-2 ml-2 h-full">
         <span
           v-if="instance.isFragment"
+          v-tooltip="'Has multiple root DOM nodes'"
           class="info fragment bg-blue-300 dark:bg-blue-800"
         >
           fragment
         </span>
         <span
+          v-if="instance.inactive"
+          v-tooltip="'Currently inactive but not destroyed'"
+          class="info inactive bg-gray-500"
+        >
+          inactive
+        </span>
+        <span
           v-for="(tag, index) of instance.tags"
           :key="index"
+          v-tooltip="{
+            content: tag.tooltip,
+            html: true
+          }"
           :style="{
             color: `#${tag.textColor.toString(16).padStart(6, '0')}`,
             backgroundColor: `#${tag.backgroundColor.toString(16).padStart(6, '0')}`,
@@ -163,6 +183,9 @@ export default {
         >
           {{ tag.label }}
         </span>
+        <!-- <span class="info bg-gray-500">
+          {{ instance.uid }}
+        </span> -->
       </span>
     </div>
 

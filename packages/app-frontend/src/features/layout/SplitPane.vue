@@ -1,8 +1,9 @@
-<script>
-import { ref, computed, watch } from '@vue/composition-api'
+<script lang="ts">
+import { ref, computed, watch, defineComponent, PropType } from '@vue/composition-api'
+import { getStorage, setStorage } from '@vue-devtools/shared-utils'
 import { useOrientation } from './orientation'
 
-export default {
+export default defineComponent({
   props: {
     defaultSplit: {
       type: Number,
@@ -20,9 +21,9 @@ export default {
     },
 
     draggerOffset: {
-      type: String,
+      type: String as PropType<'before' | 'center' | 'after'>,
       default: 'center',
-      validator: value => ['before', 'center', 'after'].includes(value)
+      validator: (value: any) => ['before', 'center', 'after'].includes(value)
     },
 
     saveId: {
@@ -39,22 +40,13 @@ export default {
     if (props.saveId) {
       const storageKey = `split-pane-${props.saveId}`
 
-      const savedValue = localStorage.getItem(storageKey)
-      if (savedValue != null) {
-        let parsedValue
-        try {
-          parsedValue = JSON.parse(savedValue)
-        } catch (e) {
-          console.error(e)
-        }
-
-        if (typeof parsedValue === 'number') {
-          split.value = parsedValue
-        }
+      const savedValue = getStorage(storageKey)
+      if (savedValue != null && typeof savedValue === 'number') {
+        split.value = savedValue
       }
 
       watch(split, value => {
-        localStorage.setItem(storageKey, JSON.stringify(value))
+        setStorage(storageKey, value)
       })
     }
 
@@ -81,13 +73,13 @@ export default {
     let startSplit = 0
     const el = ref(null)
 
-    function dragStart (e) {
+    function dragStart (e: MouseEvent) {
       dragging.value = true
       startPosition = orientation.value === 'landscape' ? e.pageX : e.pageY
       startSplit = boundSplit.value
     }
 
-    function dragMove (e) {
+    function dragMove (e: MouseEvent) {
       if (dragging.value) {
         let position
         let totalSize
@@ -118,7 +110,7 @@ export default {
       rightStyle
     }
   }
-}
+})
 </script>
 
 <template>
@@ -139,14 +131,14 @@ export default {
       class="relative top-0 left-0"
       :class="{
         'pointer-events-none': dragging,
-        'border-r border-gray-200 dark:border-gray-900': orientation === 'landscape'
+        'border-r border-gray-200 dark:border-gray-800': orientation === 'landscape'
       }"
       :style="leftStyle"
     >
       <slot name="left" />
 
       <div
-        class="dragger absolute z-100"
+        class="dragger absolute z-100 hover:bg-green-500 hover:bg-opacity-25 transition-colors duration-150 delay-150"
         :class="{
           'top-0 bottom-0 cursor-ew-resize': orientation === 'landscape',
           'left-0 right-0 cursor-ns-resize': orientation === 'portrait',

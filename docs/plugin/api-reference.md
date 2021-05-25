@@ -19,12 +19,13 @@ The plugin descriptor is an object describing the devtools plugin to the Vue dev
 It has the following properties:
 
 - `id`: a unique id between all possible plugins. It's recommended to use a Reverse Domain Name notation, for example: `org.vuejs.router`, or the npm package name.
-- `label`: the label displayed to the user. It's recommended to use a user-friendly name from your plugin, for example: `'Vue Router'`. Do not put `'devtools'` or `'plugin'` in the name, since the user will be seeing this devtools plugin while using your Vue plugin already.
 - `app`: the current application instance. The devtools is scoped to a specific application, so you have to specify on which application instance the devtools plugin is going to work.
+- `label`: the label displayed to the user. It's recommended to use a user-friendly name from your plugin, for example: `'Vue Router'`. Do not put `'devtools'` or `'plugin'` in the name, since the user will be seeing this devtools plugin while using your Vue plugin already.
 - `packageName` (optional): The `npm` package name associated with the devtools plugin, for example `'vue-router'`.
 - `homepage` (optional): URL to your documentation.
 - `logo` (optional): URL to a logo of your Vue plugin.
 - `componentStateTypes` (optional): an array of custom component state section names you are going to add to the Component inspector. If you add new state to the component inspector, you should declare their sections here so the devtools can display the plugin icon.
+- `disableAppScope` (optional): if set to `true`, the hooks registered with this plugin will not be scoped to the associated app. In that case, you might need to use the `app` payload property to check what the current app is inside each hook.
 
 Example:
 
@@ -33,14 +34,14 @@ const stateType = 'routing properties'
 
 setupDevtoolsPlugin({
   id: 'org.vuejs.router',
+  app,
   label: 'Vue Router',
   packageName: 'vue-router',
   homepage: 'https://router.vuejs.org/',
   logo: 'https://vuejs.org/images/icons/favicon-96x96.png',
   componentStateTypes: [
     stateType
-  ],
-  app
+  ]
 }, api => {
   // Use the API here
 })
@@ -53,6 +54,7 @@ setupDevtoolsPlugin({
 Use this hook to add tags in the component tree.
 
 The `payload` argument:
+- `app`: app instance currently active in the devtools
 - `componentInstance`: the current component instance data in the tree
 - `treeNode`: the tree node that will be sent to the devtools
 - `filter`: the current value of the seach input above the tree in the component inspector
@@ -72,7 +74,8 @@ api.on.visitComponentTree(payload => {
     node.tags.push({
       label: 'test',
       textColor: 0xFFAAAA,
-      backgroundColor: 0xFFEEEE
+      backgroundColor: 0xFFEEEE,
+      tooltip: `It's a test!`
     })
   }
 })
@@ -83,6 +86,7 @@ api.on.visitComponentTree(payload => {
 Use this hook to add new information to the state of the selected component.
 
 The `payload` argument:
+- `app`: app instance currently active in the devtools
 - `componentInstance`: the current component instance data in the tree
 - `instanceData`: the state that will be sent to the devtools
 
@@ -139,6 +143,67 @@ api.on.inspectComponent(payload => {
 })
 ```
 
+### on.editComponentState
+
+If you mark a field as `editable: true`, you should also use this hook to apply the new value sent by the devtools.
+
+You have to put a condition in the callback to target only your field type:
+
+```js
+api.on.editComponentState(payload => {
+  if (payload.type === stateType) {
+    // Edit logic here
+  }
+})
+```
+
+The `payload` argument:
+- `app`: app instance currently active in the devtools
+- `type`: the current field type
+- `path`: an array of string that represents the property edited by the user. For example, if the user edits the `myObj.myProp.hello` property, the `path` will be `['myObj', 'myProp', 'hello']`.
+- `state`: object describing the edit with those properties:
+  - `value`: new value
+  - `newKey`: string that is set if the key of the value changed, usually when it's in an object
+  - `remove`: if `true`, the value should be removed from the object or array
+- `set`: an helper function that makes it easy to apply the edit on a state object
+
+Example:
+
+```js
+api.on.editComponentState(payload => {
+  if (payload.type === stateType) {
+    payload.set(myState)
+  }
+})
+```
+
+Here is a full example of an editable custom component field:
+
+```js
+const myState = {
+  foo: 'bar'
+}
+
+api.on.inspectComponent(payload => {
+  if (payload.instanceData) {
+    payload.instanceData.state.push({
+      type: stateType,
+      key: 'foo',
+      value: myState.foo,
+      editable: true
+    })
+  }
+})
+
+api.on.editComponentState(payload => {
+  if (payload.type === stateType) {
+    payload.set(myState)
+  }
+})
+```
+
+As you can see, you should use an object to hold the field value so that it can be assigned to.
+
 ### notifyComponentUpdate
 
 If your state has changed, you can tell the devtools to refresh the selected component state with the `notifyComponentUpdate` method:
@@ -164,12 +229,15 @@ The options are:
 - `icon` (optional): [Material icon code](https://material.io/resources/icons/), for example `'star'`
 - `treeFilterPlaceholder` (optional): placeholder of the filter input above the tree
 - `stateFilterPlaceholder` (optional): placeholder of the filter input in the state inspector
+- `noSelectionText` (optional): text displayed in the inspector pane when no node is selected
 
 Example:
 
 ```js
+const INSPECTOR_ID = 'test-inspector'
+
 api.addInspector({
-  id: 'test-inspector',
+  id: INSPECTOR_ID,
   label: 'Test inspector',
   icon: 'tab_unselected',
   treeFilterPlaceholder: 'Search for test...'
@@ -184,11 +252,11 @@ It's recommended to use a variable to put the `id`, so that you can reuse it aft
 
 This hook is called when the devtools wants to load the tree of any custom inspector.
 
-You have to put a condition in the callback to target only the current application and the current inspector:
+You have to put a condition in the callback to target only your inspector:
 
 ```js
 api.on.getInspectorTree(payload => {
-  if (payload.app === app && payload.inspectorId === 'test-inspector') {
+  if (payload.inspectorId === 'test-inspector') {
     // Your logic here
   }
 })
@@ -208,12 +276,13 @@ Each node can have those properties:
   - `label`: text displayed in the tag
   - `textColor`: text color, for example: `0x000000` for black
   - `backgroundColor`: background color, for example: `0xffffff` for white
+  - `tooltip` (optional): HTML for a tooltip over the tag
 
 Example:
 
 ```js
 api.on.getInspectorTree(payload => {
-  if (payload.app === app && payload.inspectorId === 'test-inspector') {
+  if (payload.inspectorId === 'test-inspector') {
     payload.rootNodes = [
       {
         id: 'root',
@@ -246,11 +315,11 @@ api.on.getInspectorTree(payload => {
 
 This hook is called when the devtools needs to load the state for the currently selected node in a custom inspector.
 
-You have to put a condition in the callback to target only the current application and the current inspector:
+You have to put a condition in the callback to target only your inspector:
 
 ```js
 api.on.getInspectorState(payload => {
-  if (payload.app === app && payload.inspectorId === 'test-inspector') {
+  if (payload.inspectorId === 'test-inspector') {
     // Your logic here
   }
 })
@@ -288,7 +357,7 @@ Example:
 
 ```js
 api.on.getInspectorState(payload => {
-  if (payload.app === app && payload.inspectorId === 'test-inspector') {
+  if (payload.inspectorId === 'test-inspector') {
     if (payload.nodeId === 'root') {
       payload.state = {
         'root info': [
@@ -327,12 +396,12 @@ api.on.getInspectorState(payload => {
 
 If you mark a field as `editable: true`, you should also use this hook to apply the new value sent by the devtools.
 
-You have to put a condition in the callback to target only the current application and the current inspector:
+You have to put a condition in the callback to target only your inspector:
 
 ```js
 api.on.editInspectorState(payload => {
-  if (payload.app === app && payload.inspectorId === 'test-inspector') {
-    // Your logic here
+  if (payload.inspectorId === 'test-inspector') {
+    // Edit logic here
   }
 })
 ```
@@ -352,9 +421,9 @@ Example:
 
 ```js
 api.on.editInspectorState(payload => {
-  if (payload.app === app && payload.inspectorId === 'test-inspector') {
+  if (payload.inspectorId === 'test-inspector') {
     if (payload.nodeId === 'root') {
-      payload.set(myState, payload.path, payload.state.value)
+      payload.set(myState)
     }
   }
 })
@@ -392,6 +461,9 @@ Register a new timeline layer with this method. The options are:
 - `id`: unique id of the layer. It's recommended to use a variable to store it.
 - `label`: text displayed in the layer list
 - `color`: color of the layer background and event graphics
+- `skipScreenshots` (optional): don't trigger a screenshot for the layer events
+- `groupsOnly` (optional): only display groups of events (they will be drawn as rectangles)
+- `ignoreNoDurationGroups` (optional): skip groups with no duration (useful when `groupsOnly` is `true`)
 
 Example:
 
@@ -440,11 +512,11 @@ api.addTimelineEvent({
 
 This hook is called when a timline event is selected. It's useful if you want to send additional information to the devtools in a lazy way.
 
-You have to put a condition in the callback to target only the current application and the current timeline layer:
+You have to put a condition in the callback to target only your timeline layer:
 
 ```js
 api.on.inspectTimelineEvent(payload => {
-  if (payload.app === app && payload.layerId === 'test-layer') {
+  if (payload.layerId === 'test-layer') {
     // Your logic here
   }
 })
@@ -454,7 +526,7 @@ Example:
 
 ```js
 api.on.inspectTimelineEvent(payload => {
-  if (payload.app === app && payload.layerId === 'test-layer') {
+  if (payload.layerId === 'test-layer') {
     // Async operation example
     return new Promise(resolve => {
       setTimeout(() => {
@@ -470,6 +542,31 @@ api.on.inspectTimelineEvent(payload => {
 ```
 
 ## Utilities
+
+### getComponentInstances
+
+Component instances on the Vue app.
+- `app`: the target Vue app instance
+
+Example:
+
+```js
+let componentInstances = []
+
+api.on.getInspectorTree(async (payload) => {
+  if (payload.inspectorId === 'test-inspector') { // e.g. custom inspector
+    componentInstances = await api.getComponentInstances(app)
+      for (const instance of instances) {
+      payload.rootNodes.push({
+        id: instance.uid.toString(),
+        label: `Component ${instance.uid}`
+      })
+    }
+
+    // something todo ...
+  }
+})
+```
 
 ### getComponentBounds
 
@@ -510,6 +607,54 @@ api.on.inspectComponent(async payload => {
       key: 'component name',
       value: name
     })
+  }
+})
+```
+
+### highlightElement
+
+Highlight the element of the component.
+- `instance`: the target component instance
+
+Example:
+
+```js
+let componentInstances = [] // keeped component instance of the Vue app (e.g. `getComponentInstances`)
+
+api.on.getInspectorState(payload => {
+  if (payload.inspectorId === 'test-inspector') { // e.g. custom inspector
+    // find component instance from custom inspector node
+    const instance = componentInstances.find(instance => instance.uid.toString() === payload.nodeId)
+
+    if (instance) {
+      api.highlightElement(instance)
+    }
+
+    // something todo ...
+  }
+})
+```
+
+### unhighlightElement
+
+Unhighlight the element.
+- `instance`: the target component instance
+
+Example:
+
+```js
+let componentInstances = [] // keeped component instance of the Vue app (e.g. `getComponentInstances`)
+
+api.on.getInspectorState(payload => {
+  if (payload.inspectorId === 'test-inspector') { // e.g. custom inspector
+    // find component instance from custom inspector node
+    const instance = componentInstances.find(instance => instance.uid.toString() === payload.nodeId)
+
+    if (instance) {
+      api.unhighlightElement(instance)
+    }
+
+    // something todo ...
   }
 })
 ```

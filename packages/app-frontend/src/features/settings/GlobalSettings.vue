@@ -1,3 +1,17 @@
+<script lang="ts">
+import { defineComponent } from '@vue/composition-api'
+
+// import NewTag from './NewTag.vue'
+
+// export default {
+//   components: {
+//     NewTag
+//   }
+// }
+
+export default defineComponent({})
+</script>
+
 <template>
   <div class="global-preferences preferences">
     <VueFormField title="Theme">
@@ -49,15 +63,16 @@
         Useful for trackpads
       </template>
     </VueFormField>
+
+    <VueFormField
+      title="Performance monitoring"
+    >
+      <VueSwitch v-model="$shared.performanceMonitoringEnabled">
+        Enable
+      </VueSwitch>
+      <template #subtitle>
+        Turn off if your app is slowed down
+      </template>
+    </VueFormField>
   </div>
 </template>
-
-<script>
-// import NewTag from './NewTag.vue'
-
-// export default {
-//   components: {
-//     NewTag
-//   }
-// }
-</script>

@@ -11,6 +11,7 @@ import { JobQueue } from './util/queue'
 import { backend as backendVue1 } from '@vue-devtools/app-backend-vue1'
 import { backend as backendVue2 } from '@vue-devtools/app-backend-vue2'
 import { backend as backendVue3 } from '@vue-devtools/app-backend-vue3'
+import { scan } from './legacy/scan'
 
 const availableBackends = [
   backendVue1,
@@ -55,7 +56,8 @@ async function registerAppJob (options: AppRecordOptions, ctx: BackendContext) {
         lastInspectedComponentId: null,
         instanceMap: new Map(),
         rootInstance: await ctx.api.getAppRootInstance(options.app),
-        timelineEventMap: new Map()
+        perfGroupIds: new Map(),
+        meta: options.meta ?? {}
       }
       options.app.__VUE_DEVTOOLS_APP_RECORD__ = record
       const rootId = `${record.id}:root`
@@ -66,6 +68,10 @@ async function registerAppJob (options: AppRecordOptions, ctx: BackendContext) {
       ctx.bridge.send(BridgeEvents.TO_FRONT_APP_ADD, {
         appRecord: mapAppRecord(record)
       })
+
+      if (backend.setupApp) {
+        backend.setupApp(ctx.api, record)
+      }
 
       // Auto select first app
       if (ctx.currentAppRecord == null) {
@@ -109,4 +115,33 @@ export function getAppRecord (app: any, ctx: BackendContext) {
 
 export function waitForAppsRegistration () {
   return jobs.queue(async () => { /* NOOP */ })
+}
+
+export async function sendApps (ctx: BackendContext) {
+  const appRecords = []
+
+  for (const appRecord of ctx.appRecords) {
+    if (!(await ctx.api.getComponentDevtoolsOptions(appRecord.rootInstance)).hide) {
+      appRecords.push(appRecord)
+    }
+  }
+
+  ctx.bridge.send(BridgeEvents.TO_FRONT_APP_LIST, {
+    apps: appRecords.map(mapAppRecord)
+  })
+}
+
+// eslint-disable-next-line camelcase
+export async function _legacy_getAndRegisterApps (Vue: any, ctx: BackendContext) {
+  const apps = scan()
+  apps.forEach(app => {
+    registerApp({
+      app,
+      types: {},
+      version: Vue.version,
+      meta: {
+        Vue
+      }
+    }, ctx)
+  })
 }

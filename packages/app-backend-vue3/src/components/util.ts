@@ -1,5 +1,6 @@
 import { classify } from '@vue-devtools/shared-utils'
 import { basename } from '../util'
+import { ComponentInstance, App } from '@vue/devtools-api'
 import { BackendContext } from '@vue-devtools/app-backend-api'
 
 export function isBeingDestroyed (instance) {
@@ -28,13 +29,23 @@ export function isFragment (instance) {
 export function getInstanceName (instance) {
   const name = getComponentTypeName(instance.type || {})
   if (name) return name
-  return instance.root === instance
-    ? 'Root'
-    : 'Anonymous Component'
+  if (instance.root === instance) return 'Root'
+  for (const key in instance.parent?.type?.components) {
+    if (instance.parent.type.components[key] === instance.type) return saveComponentName(instance, key)
+  }
+  for (const key in instance.appContext?.components) {
+    if (instance.appContext.components[key] === instance.type) return saveComponentName(instance, key)
+  }
+  return 'Anonymous Component'
+}
+
+function saveComponentName (instance, key) {
+  instance.type.__vdevtools_guessedName = key
+  return key
 }
 
 function getComponentTypeName (options) {
-  const name = options.name || options._componentTag
+  const name = options.name || options._componentTag || options.__vdevtools_guessedName
   if (name) {
     return name
   }
@@ -65,4 +76,12 @@ export function getRenderKey (value): string {
   } else {
     return 'Object'
   }
+}
+
+export function getComponentInstances (app: App): ComponentInstance[] {
+  const appRecord = app.__VUE_DEVTOOLS_APP_RECORD__
+  const appId = appRecord.id.toString()
+  return [...appRecord.instanceMap]
+    .filter(([key]) => key.split(':')[0] === appId)
+    .map(([,instance]) => instance) // eslint-disable-line comma-spacing
 }

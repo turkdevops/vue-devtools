@@ -1,10 +1,13 @@
-<script>
+<script lang="ts">
 import StateInspector from '@front/features/inspector/StateInspector.vue'
-import { useSelectedComponent } from '.'
+import EmptyPane from '@front/features/layout/EmptyPane.vue'
+import { useSelectedComponent } from './composable'
+import { defineComponent } from '@vue/composition-api'
 
-export default {
+export default defineComponent({
   components: {
-    StateInspector
+    StateInspector,
+    EmptyPane
   },
 
   setup () {
@@ -12,7 +15,7 @@ export default {
       ...useSelectedComponent()
     }
   }
-}
+})
 </script>
 
 <template>
@@ -20,7 +23,7 @@ export default {
     v-if="data"
     class="h-full flex flex-col"
   >
-    <div class="px-2 h-10 border-b border-gray-200 dark:border-gray-900 flex items-center flex-none">
+    <div class="px-2 h-10 border-b border-gray-200 dark:border-gray-800 flex items-center flex-none">
       <div class="flex items-baseline">
         <span class="text-gray-500">&lt;</span>
         <span class="text-green-500">
@@ -37,9 +40,16 @@ export default {
       />
 
       <VueButton
+        v-tooltip="'Scroll to component'"
+        icon-left="preview"
+        class="flat icon-button"
+        @click="scrollToComponent()"
+      />
+
+      <VueButton
         v-if="$isChrome"
         v-tooltip="'Inspect DOM'"
-        icon-left="code"
+        icon-left="menu_open"
         class="flat icon-button"
         @click="inspectDOM()"
       />
@@ -62,4 +72,11 @@ export default {
       @edit-state="editState"
     />
   </div>
+
+  <EmptyPane
+    v-else
+    icon="device_hub"
+  >
+    Select a component
+  </EmptyPane>
 </template>

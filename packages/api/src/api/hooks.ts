@@ -1,4 +1,4 @@
-import { ComponentTreeNode, InspectedComponentData, ComponentInstance } from './component'
+import { ComponentTreeNode, InspectedComponentData, ComponentInstance, ComponentDevtoolsOptions } from './component'
 import { App } from './app'
 import { CustomInspectorNode, CustomInspectorState, TimelineEvent } from './api'
 
@@ -13,9 +13,11 @@ export const enum Hooks {
   INSPECT_COMPONENT = 'inspectComponent',
   GET_COMPONENT_BOUNDS = 'getComponentBounds',
   GET_COMPONENT_NAME = 'getComponentName',
+  GET_COMPONENT_INSTANCES = 'getComponentInstances',
   GET_ELEMENT_COMPONENT = 'getElementComponent',
   GET_COMPONENT_ROOT_ELEMENTS = 'getComponentRootElements',
   EDIT_COMPONENT_STATE = 'editComponentState',
+  GET_COMPONENT_DEVTOOLS_OPTIONS = 'getAppDevtoolsOptions',
   INSPECT_TIMELINE_EVENT = 'inspectTimelineEvent',
   GET_INSPECTOR_TREE = 'getInspectorTree',
   GET_INSPECTOR_STATE = 'getInspectorState',
@@ -53,6 +55,7 @@ export type HookPayloads = {
     filter: string
   }
   [Hooks.VISIT_COMPONENT_TREE]: {
+    app: App
     componentInstance: ComponentInstance
     treeNode: ComponentTreeNode
     filter: string
@@ -62,6 +65,7 @@ export type HookPayloads = {
     parentInstances: ComponentInstance[]
   }
   [Hooks.INSPECT_COMPONENT]: {
+    app: App
     componentInstance: ComponentInstance
     instanceData: InspectedComponentData
   }
@@ -73,6 +77,10 @@ export type HookPayloads = {
     componentInstance: ComponentInstance
     name: string
   }
+  [Hooks.GET_COMPONENT_INSTANCES]: {
+    app: App
+    componentInstances: ComponentInstance[]
+  }
   [Hooks.GET_ELEMENT_COMPONENT]: {
     element: HTMLElement | any
     componentInstance: ComponentInstance
@@ -82,9 +90,16 @@ export type HookPayloads = {
     rootElements: (HTMLElement | any)[]
   }
   [Hooks.EDIT_COMPONENT_STATE]: {
+    app: App
     componentInstance: ComponentInstance
     path: string[]
+    type: string
     state: EditStatePayload
+    set: (object: any, path: string | (string[]), value: any, cb?: (object: any, field: string, value: any) => void) => void
+  }
+  [Hooks.GET_COMPONENT_DEVTOOLS_OPTIONS]: {
+    componentInstance: ComponentInstance
+    options: ComponentDevtoolsOptions
   }
   [Hooks.INSPECT_TIMELINE_EVENT]: {
     app: App
@@ -138,9 +153,11 @@ export interface Hookable<TContext> {
   inspectComponent (handler: HookHandler<HookPayloads[Hooks.INSPECT_COMPONENT], TContext>)
   getComponentBounds (handler: HookHandler<HookPayloads[Hooks.GET_COMPONENT_BOUNDS], TContext>)
   getComponentName (handler: HookHandler<HookPayloads[Hooks.GET_COMPONENT_NAME], TContext>)
+  getComponentInstances (handler: HookHandler<HookPayloads[Hooks.GET_COMPONENT_INSTANCES], TContext>)
   getElementComponent (handler: HookHandler<HookPayloads[Hooks.GET_ELEMENT_COMPONENT], TContext>)
   getComponentRootElements (handler: HookHandler<HookPayloads[Hooks.GET_COMPONENT_ROOT_ELEMENTS], TContext>)
   editComponentState (handler: HookHandler<HookPayloads[Hooks.EDIT_COMPONENT_STATE], TContext>)
+  getComponentDevtoolsOptions (handler: HookHandler<HookPayloads[Hooks.GET_COMPONENT_DEVTOOLS_OPTIONS], TContext>)
   inspectTimelineEvent (handler: HookHandler<HookPayloads[Hooks.INSPECT_TIMELINE_EVENT], TContext>)
   getInspectorTree (handler: HookHandler<HookPayloads[Hooks.GET_INSPECTOR_TREE], TContext>)
   getInspectorState (handler: HookHandler<HookPayloads[Hooks.GET_INSPECTOR_STATE], TContext>)

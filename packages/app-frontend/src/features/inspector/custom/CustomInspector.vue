@@ -1,13 +1,16 @@
-<script>
-import { watch } from '@vue/composition-api'
+<script lang="ts">
 import SplitPane from '@front/features/layout/SplitPane.vue'
+import EmptyPane from '@front/features/layout/EmptyPane.vue'
 import CustomInspectorNode from './CustomInspectorNode.vue'
 import CustomInspectorSelectedNodePane from './CustomInspectorSelectedNodePane.vue'
-import { useCurrentInspector } from '.'
 
-export default {
+import { watch, ref, provide, defineComponent } from '@vue/composition-api'
+import { useCurrentInspector } from './composable'
+
+export default defineComponent({
   components: {
     SplitPane,
+    EmptyPane,
     CustomInspectorNode,
     CustomInspectorSelectedNodePane
   },
@@ -19,7 +22,7 @@ export default {
       refreshTree
     } = useCurrentInspector()
 
-    watch(() => inspector.value && inspector.value.treeFilter, (value) => {
+    watch(() => inspector.value && inspector.value.treeFilter, () => {
       refreshTree()
     })
 
@@ -29,12 +32,18 @@ export default {
       immediate: true
     })
 
+    // Scroller
+
+    const treeScroller = ref()
+    provide('treeScroller', treeScroller)
+
     return {
       inspector,
-      refreshInspector
+      refreshInspector,
+      treeScroller
     }
   }
-}
+})
 </script>
 
 <template>
@@ -48,10 +57,13 @@ export default {
             v-model="inspector.treeFilter"
             icon-left="search"
             :placeholder="inspector.treeFilterPlaceholder || 'Search...'"
-            class="search flat border-b border-gray-200 dark:border-gray-900"
+            class="search flat border-b border-gray-200 dark:border-gray-800"
           />
 
-          <div class="flex-1 p-2 overflow-auto">
+          <div
+            ref="treeScroller"
+            class="flex-1 p-2 overflow-auto"
+          >
             <CustomInspectorNode
               v-for="node of inspector.rootNodes"
               :key="node.id"
@@ -75,12 +87,19 @@ export default {
       />
     </portal>
   </div>
-  <div
+  <EmptyPane
     v-else
-    class="flex items-center justify-center text-opacity-50"
+    icon="explore"
+    class="wait"
   >
-    Inspector {{ $route.params.inspectorId }} not found
-  </div>
+    <div class="flex flex-col items-center">
+      <div>Inspector {{ $route.params.inspectorId }} not found</div>
+      <a
+        class="text-green-500 hover:underline cursor-pointer"
+        @click="$router.replace({ name: 'inspector-components' })"
+      >Go back</a>
+    </div>
+  </EmptyPane>
 </template>
 
 <style lang="postcss" scoped>
@@ -93,6 +112,19 @@ export default {
     .content {
       border: none !important;
     }
+  }
+}
+
+.wait {
+  animation: wait 1s;
+}
+
+@keyframes wait {
+  0%, 99% {
+    visibility: hidden;
+  }
+  100% {
+    visibility: visible;
   }
 }
 </style>

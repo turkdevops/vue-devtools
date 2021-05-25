@@ -1,9 +1,9 @@
-<script>
-import { usePlugins } from '.'
-import { computed } from '@vue/composition-api'
+<script lang="ts">
+import { computed, defineComponent } from '@vue/composition-api'
 import { useRouter } from '@front/util/router'
+import { usePlugins } from '.'
 
-export default {
+export default defineComponent({
   props: {
     pluginId: {
       type: String,
@@ -33,7 +33,7 @@ export default {
       go
     }
   }
-}
+})
 </script>
 
 <template>
@@ -48,7 +48,7 @@ export default {
 
     <template #popper>
       <div class="flex space-x-3 items-center">
-        <div class="flex items-center justify-center w-8 h-8 bg-gray-700 dark:bg-gray-200 rounded-full">
+        <div class="flex items-center justify-center w-8 h-8 bg-gray-700 dark:bg-gray-200 rounded">
           <img
             v-if="plugin.logo"
             :src="plugin.logo"

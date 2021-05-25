@@ -1,12 +1,13 @@
 import { InspectorNodeTag } from './api'
+import { ID } from './util'
 
 export type ComponentInstance = any // @TODO
 
 export interface ComponentTreeNode {
-  uid: number
+  uid: ID
   id: string
   name: string
-  renderKey: string
+  renderKey: string | number
   inactive: boolean
   isFragment: boolean
   hasChildren: boolean
@@ -16,6 +17,7 @@ export interface ComponentTreeNode {
   isRouterView?: boolean
   macthedRouteSegment?: string
   tags: InspectorNodeTag[]
+  meta?: any
 }
 
 export interface InspectedComponentData {
@@ -69,3 +71,7 @@ export interface ComponentCustomState extends ComponentStateBase {
 }
 
 export type ComponentState = ComponentStateBase | ComponentPropState | ComponentCustomState
+
+export interface ComponentDevtoolsOptions {
+  hide?: boolean
+}

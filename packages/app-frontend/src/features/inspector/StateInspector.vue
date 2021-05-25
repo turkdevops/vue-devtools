@@ -1,27 +1,8 @@
-<template>
-  <div class="data-wrapper">
-    <template v-for="(dataType, index) in dataTypes">
-      <StateType
-        v-if="defer(index + 1)"
-        :key="dataType"
-        :data-type="dataType"
-        :index="index"
-        :state="state"
-        :expanded-state="expandedState"
-        :force-collapse="forceCollapse"
-        :high-density="highDensity"
-        :dim-after="dimAfter"
-        @toggle="toggle"
-        @edit-state="(path, payload) => $emit('edit-state', path, payload)"
-      />
-    </template>
-  </div>
-</template>
-
 <script>
+import StateType from './StateType.vue'
+
 import Vue from 'vue'
 import Defer from '@front/mixins/defer'
-import StateType from './StateType.vue'
 
 const keyOrder = {
   props: 1,
@@ -30,6 +11,7 @@ const keyOrder = {
   'register module': 1,
   'unregister module': 1,
   setup: 2,
+  data: 2,
   state: 2,
   getters: 3,
   mutation: 1,
@@ -117,3 +99,23 @@ export default {
   }
 }
 </script>
+
+<template>
+  <div class="data-wrapper">
+    <template v-for="(dataType, index) in dataTypes">
+      <StateType
+        v-if="defer(index + 1)"
+        :key="dataType"
+        :data-type="dataType"
+        :index="index"
+        :state="state"
+        :expanded-state="expandedState"
+        :force-collapse="forceCollapse"
+        :high-density="highDensity"
+        :dim-after="dimAfter"
+        @toggle="toggle"
+        @edit-state="(path, payload) => $emit('edit-state', path, payload, dataType)"
+      />
+    </template>
+  </div>
+</template>
