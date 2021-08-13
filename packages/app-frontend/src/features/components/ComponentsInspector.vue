@@ -3,9 +3,9 @@ import SplitPane from '@front/features/layout/SplitPane.vue'
 import ComponentTreeNode from './ComponentTreeNode.vue'
 import SelectedComponentPane from './SelectedComponentPane.vue'
 
-import { onMounted, ref, provide, defineComponent } from '@vue/composition-api'
+import { onMounted, ref, provide, defineComponent, computed } from '@vue/composition-api'
 import { onKeyDown, onKeyUp } from '@front/util/keyboard'
-import { useComponentPick, useComponents } from './composable'
+import { useComponentPick, useComponents, loadComponent } from './composable'
 
 export default defineComponent({
   components: {
@@ -20,7 +20,8 @@ export default defineComponent({
       requestComponentTree,
       treeFilter,
       selectLastComponent,
-      subscribeToSelectedData
+      subscribeToSelectedData,
+      selectedComponentId
     } = useComponents()
 
     subscribeToSelectedData()
@@ -48,13 +49,19 @@ export default defineComponent({
     })
 
     onKeyUp(event => {
-      console.log(event.key)
       if (event.key === 's' && !pickingComponent.value) {
         startPickingComponent()
       } else if (event.key === 'Escape' && pickingComponent.value) {
         stopPickingComponent()
       }
     })
+
+    // Refresh
+
+    function refresh () {
+      requestComponentTree(null)
+      loadComponent(selectedComponentId.value)
+    }
 
     // Scroller
 
@@ -68,6 +75,7 @@ export default defineComponent({
       pickingComponent,
       startPickingComponent,
       stopPickingComponent,
+      refresh,
       treeScroller
     }
   }
@@ -109,7 +117,7 @@ export default defineComponent({
     </SplitPane>
 
     <portal to="more-menu">
-      <div class="space-y-1 px-4 py-2 text-sm">
+      <div class="space-y-1 px-3 py-2 text-sm">
         <div>Component names:</div>
 
         <VueGroup
@@ -117,18 +125,33 @@ export default defineComponent({
         >
           <VueGroupButton
             value="original"
-            label="Original name"
+            label="Original"
           />
           <VueGroupButton
             value="class"
-            label="Pascal case"
+            label="PascalCase"
           />
           <VueGroupButton
             value="kebab"
-            label="Kebab case"
+            label="kebab-case"
           />
         </VueGroup>
       </div>
+
+      <div class="space-y-1 px-3 py-2 text-sm">
+        <VueSwitch v-model="$shared.editableProps">
+          Editable props
+        </VueSwitch>
+        <div class="flex items-center space-x-1 text-xs opacity-50">
+          <VueIcon
+            icon="warning"
+            class="w-4 h-4 flex-none"
+          />
+          <span>May print warnings in the console</span>
+        </div>
+      </div>
+
+      <div class="border-t border-gray-200 dark:border-gray-800 my-1" />
     </portal>
 
     <portal to="header-end">
@@ -140,6 +163,13 @@ export default defineComponent({
         class="icon-button flat"
         icon-left="gps_fixed"
         @click="startPickingComponent()"
+      />
+
+      <VueButton
+        v-tooltip="'Force refresh'"
+        class="icon-button flat"
+        icon-left="refresh"
+        @click="refresh()"
       />
     </portal>
 

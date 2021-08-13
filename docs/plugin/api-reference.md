@@ -113,6 +113,10 @@ The `_custom` object has the following properties:
 - `readOnly`: mark this value has not editable
 - `fields`: an object of configure immediate child fields
   - `abstract`
+- `actions`: an array of buttons to add to the field
+  - `icon`: material icon identifier
+  - `tooltip`: button tooltip
+  - `action`: function to be executed
 
 When you add new sections with the `type` property, you should declare them in the `componentStateTypes` array in the plugin descriptor when you call the `setupDevtoolsPlugin`.
 
@@ -135,7 +139,14 @@ api.on.inspectComponent(payload => {
           readOnly: true,
           display: `${time}s`,
           tooltip: 'Elapsed time',
-          value: time
+          value: time,
+          actions: [
+            {
+              icon: 'input',
+              tooltip: 'Log to console',
+              action: () => console.log('current time:', time)
+            }
+          ]
         }
       }
     })
@@ -214,6 +225,12 @@ setInterval(() => {
 }, 5000)
 ```
 
+You can also pass a specific component instance:
+
+```js
+api.notifyComponentUpdate(vm)
+```
+
 ## Custom inspector
 
 Custom inspectors are useful to display debugging information about your library using an inspectable tree.
@@ -230,6 +247,10 @@ The options are:
 - `treeFilterPlaceholder` (optional): placeholder of the filter input above the tree
 - `stateFilterPlaceholder` (optional): placeholder of the filter input in the state inspector
 - `noSelectionText` (optional): text displayed in the inspector pane when no node is selected
+- `actions`: an array of buttons to add to the header of the inspector
+  - `icon`: material icon identifier
+  - `tooltip`: button tooltip
+  - `action`: function to be executed
 
 Example:
 
@@ -240,7 +261,14 @@ api.addInspector({
   id: INSPECTOR_ID,
   label: 'Test inspector',
   icon: 'tab_unselected',
-  treeFilterPlaceholder: 'Search for test...'
+  treeFilterPlaceholder: 'Search for test...',
+  actions: [
+    {
+      icon: 'star',
+      tooltip: 'Test custom action',
+      action: () => console.log('Meow! 🐱')
+    }
+  ]
 })
 ```
 
@@ -410,6 +438,7 @@ The `payload` argument:
 - `app`: app instance currently active in the devtools
 - `inspectorId`: id of the current custom inspector
 - `nodeId`: id of the currently selected node
+- `type`: the current field type
 - `path`: an array of string that represents the property edited by the user. For example, if the user edits the `myObj.myProp.hello` property, the `path` will be `['myObj', 'myProp', 'hello']`.
 - `state`: object describing the edit with those properties:
   - `value`: new value
@@ -451,6 +480,19 @@ Example:
 setInterval(() => {
   api.sendInspectorState('test-inspector')
 }, 5000)
+```
+
+### selectInspectorNode
+
+Select a specific node in the inspector tree. The arguments are:
+
+- `inspectorId`: the id of your inspector
+- `nodeId`: the id of the node to be selected
+
+Example:
+
+```js
+api.selectInspectorNode('test-inspector', 'some-node-id')
 ```
 
 ## Timeline
@@ -538,6 +580,16 @@ api.on.inspectTimelineEvent(payload => {
       }, 1000)
     })
   }
+})
+```
+
+### on.timelineCleared
+
+This hook is called when the timeline is cleared by the user. Note that clearing the timeline affects all apps and layers simultaneously.
+
+```js
+api.on.timelineCleared(() => {
+  console.log('timeline is cleared!')
 })
 ```
 

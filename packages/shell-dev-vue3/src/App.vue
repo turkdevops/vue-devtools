@@ -14,8 +14,13 @@ import Other from './Other.vue'
 import SetupRender from './SetupRender.js'
 import Form from './Form.vue'
 import Heavy from './Heavy.vue'
+import Mixins from './Mixins.vue'
+import Animation from './Animation.vue'
+import SetupScript from './SetupScript.vue'
+import SetupDataLike from './SetupDataLike.vue'
 
-import { h } from 'vue'
+import { h, createApp } from 'vue'
+import SimplePlugin from './devtools-plugin/simple'
 
 export default {
   name: 'MyApp',
@@ -36,6 +41,10 @@ export default {
     SetupRender,
     Form,
     Heavy,
+    Mixins,
+    Animation,
+    SetupScript,
+    SetupDataLike,
     inline: {
       render: () => h('h3', 'Inline component definition')
     }
@@ -45,6 +54,14 @@ export default {
     return {
       count: 0,
       text: 'Meow'
+    }
+  },
+
+  methods: {
+    createApp () {
+      const app = createApp(Child)
+      app.use(SimplePlugin)
+      app.mount('#nested-app')
     }
   }
 }
@@ -76,12 +93,16 @@ export default {
   <AsyncComponent />
   <SuspenseExample />
   <Provide />
+  <Animation />
   <Condition />
   <VModelExample />
   <Ghost />
   <Other />
   <SetupRender />
   <Form />
+  <Mixins />
+  <SetupScript />
+  <SetupDataLike />
   <inline />
   <global />
 
@@ -90,6 +111,11 @@ export default {
     {{ $store.getters.answer }}
     {{ $store.getters.twoFoo }}
   </div>
+
+  <button @click="createApp()">
+    Create nested app
+  </button>
+  <div id="nested-app" />
 
   <nav>
     <router-link to="/p1">

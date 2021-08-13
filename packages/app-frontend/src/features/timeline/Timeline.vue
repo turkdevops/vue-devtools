@@ -8,7 +8,7 @@ import TimelineEventList from './TimelineEventList.vue'
 import TimelineEventInspector from './TimelineEventInspector.vue'
 import AskScreenshotPermission from './AskScreenshotPermission.vue'
 
-import { computed, onMounted, ref, watch, defineComponent } from '@vue/composition-api'
+import { computed, onMounted, ref, watch, defineComponent, onUnmounted } from '@vue/composition-api'
 import { onSharedDataChange } from '@front/util/shared-data'
 import { formatTime } from '@front/util/format'
 import SharedData from '@utils/shared-data'
@@ -156,6 +156,116 @@ export default defineComponent({
       showScreenshot(choice)
     })
 
+    // Zoom
+
+    let zoomTimer
+    let zoomDelayTimer
+
+    function zoom (delta: number) {
+      const wrapper: HTMLDivElement = document.querySelector('[data-id="timeline-view-wrapper"]')
+      const viewWidth = wrapper.offsetWidth
+      const size = endTime.value - startTime.value
+
+      const center = size * 0.5 + startTime.value
+
+      let newSize = size + delta / viewWidth * size * 2
+      if (newSize < 10) {
+        newSize = 10
+      }
+
+      let start = center - newSize * 0.5
+      let end = center + newSize * (1 - 0.5)
+      if (start < minTime.value) {
+        start = minTime.value
+      }
+      if (end > maxTime.value) {
+        end = maxTime.value
+      }
+      startTime.value = start
+      endTime.value = end
+    }
+
+    function zoomIn () {
+      zoom(-50)
+      zoomDelayTimer = setTimeout(() => {
+        zoomTimer = setInterval(() => {
+          zoom(-50)
+        }, 75)
+      }, 200)
+      window.addEventListener('mouseup', () => stopZoom())
+    }
+
+    function zoomOut () {
+      zoom(50)
+      zoomDelayTimer = setTimeout(() => {
+        zoomTimer = setInterval(() => {
+          zoom(50)
+        }, 75)
+      }, 200)
+      window.addEventListener('mouseup', () => stopZoom())
+    }
+
+    function stopZoom () {
+      clearInterval(zoomTimer)
+      clearTimeout(zoomDelayTimer)
+    }
+
+    onUnmounted(() => {
+      stopZoom()
+    })
+
+    // Move buttons
+
+    let moveTimer
+    let moveDelayTimer
+
+    function move (delta: number) {
+      const wrapper: HTMLDivElement = document.querySelector('[data-id="timeline-view-wrapper"]')
+      const viewWidth = wrapper.offsetWidth
+      const size = endTime.value - startTime.value
+      let start = startTime.value + delta / viewWidth * size
+      let end = start + size
+      if (start < minTime.value) {
+        start = minTime.value
+        end = start + size
+      }
+      if (end > maxTime.value) {
+        end = maxTime.value
+        start = end - size
+      }
+      startTime.value = start
+      endTime.value = end
+    }
+
+    function moveLeft () {
+      move(-25)
+      moveDelayTimer = setTimeout(() => {
+        moveTimer = setInterval(() => {
+          move(-25)
+        }, 75)
+      }, 200)
+      window.addEventListener('mouseup', () => stopMove())
+    }
+
+    function moveRight () {
+      move(25)
+      moveDelayTimer = setTimeout(() => {
+        moveTimer = setInterval(() => {
+          move(25)
+        }, 75)
+      }, 200)
+      window.addEventListener('mouseup', () => stopMove())
+    }
+
+    function stopMove () {
+      clearInterval(moveTimer)
+      clearTimeout(moveDelayTimer)
+    }
+
+    onUnmounted(() => {
+      stopMove()
+    })
+
     return {
       startTime,
       endTime,
@@ -174,7 +284,11 @@ export default defineComponent({
       resetTimeline,
       formattedCursorTime,
       askScreenshotPermission,
-      supportsScreenshot
+      supportsScreenshot,
+      zoomIn,
+      zoomOut,
+      moveLeft,
+      moveRight
     }
   }
 })
@@ -190,7 +304,7 @@ export default defineComponent({
     >
       <template #left>
         <div class="flex flex-col h-full">
-          <div class="h-4 flex-none border-b border-gray-200 dark:border-gray-800" />
+          <div class="h-4 flex-none border-b border-gray-200 dark:border-gray-800 box-content" />
 
           <div
             ref="layersEl"
@@ -222,13 +336,41 @@ export default defineComponent({
         >
           <template #left>
             <div class="h-full flex flex-col">
-              <TimelineScrollbar
-                :min.sync="minTime"
-                :max.sync="maxTime"
-                :start.sync="startTime"
-                :end.sync="endTime"
-                class="flex-none"
-              />
+              <div class="flex items-center flex-none border-b border-gray-200 dark:border-gray-800">
+                <VueButton
+                  icon-left="arrow_left"
+                  class="flex-none w-4 h-4 p-0 flat zoom-btn"
+                  @mousedown.native="moveLeft()"
+                />
+
+                <TimelineScrollbar
+                  :min.sync="minTime"
+                  :max.sync="maxTime"
+                  :start.sync="startTime"
+                  :end.sync="endTime"
+                  class="flex-1"
+                />
+
+                <VueButton
+                  icon-left="arrow_right"
+                  class="flex-none w-4 h-4 p-0 flat zoom-btn"
+                  @mousedown.native="moveRight()"
+                />
+
+                <VueButton
+                  v-tooltip="'Zoom in'"
+                  icon-left="add"
+                  class="flex-none w-4 h-4 p-0 flat zoom-btn"
+                  @mousedown.native="zoomIn()"
+                />
+
+                <VueButton
+                  v-tooltip="'Zoom out'"
+                  icon-left="remove"
+                  class="flex-none w-4 h-4 p-0 flat zoom-btn"
+                  @mousedown.native="zoomOut()"
+                />
+              </div>
               <TimelineView
                 class="h-full"
               />
@@ -322,7 +464,7 @@ export default defineComponent({
     <portal to="more-menu">
       <VueSwitch
         v-model="$shared.timelineTimeGrid"
-        class="w-full px-4 py-1 extend-left"
+        class="w-full px-3 py-1 extend-left"
       >
         Time grid
       </VueSwitch>
@@ -330,10 +472,12 @@ export default defineComponent({
       <VueSwitch
         v-if="supportsScreenshot"
         v-model="$shared.timelineScreenshots"
-        class="w-full px-4 py-1 extend-left"
+        class="w-full px-3 py-1 extend-left"
       >
         Screenshots
       </VueSwitch>
+
+      <div class="border-t border-gray-200 dark:border-gray-800 my-1" />
     </portal>
 
     <AskScreenshotPermission
@@ -347,5 +491,12 @@ export default defineComponent({
 <style lang="postcss" scoped>
 .ask-permission {
   z-index: 11000;
+}
+
+.zoom-btn {
+  @apply rounded-none;
+  /deep/ .vue-ui-icon {
+    @apply w-3.5 h-3.5 mr-0 left-0 right-0 !important;
+  }
 }
 </style>

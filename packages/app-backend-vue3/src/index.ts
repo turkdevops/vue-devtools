@@ -20,7 +20,9 @@ export const backend: DevtoolsBackend = {
     })
 
     api.on.getAppRootInstance(payload => {
-      if (payload.app._container?._vnode?.component) {
+      if (payload.app._instance) {
+        payload.root = payload.app._instance
+      } else if (payload.app._container?._vnode?.component) {
         payload.root = payload.app._container?._vnode?.component
       }
     })
@@ -70,13 +72,18 @@ export const backend: DevtoolsBackend = {
       payload.options = payload.componentInstance.type.devtools
     })
 
+    api.on.getComponentRenderCode(payload => {
+      payload.code = payload.componentInstance.render.toString()
+    })
+
     api.on.transformCall(payload => {
       if (payload.callName === HookEvents.COMPONENT_UPDATED) {
         const component = payload.inArgs[0]
         payload.outArgs = [
           component.appContext.app,
           component.uid,
-          component.parent ? component.parent.uid : undefined
+          component.parent ? component.parent.uid : undefined,
+          component
         ]
       }
     })

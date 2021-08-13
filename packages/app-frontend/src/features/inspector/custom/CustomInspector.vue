@@ -5,6 +5,8 @@ import CustomInspectorNode from './CustomInspectorNode.vue'
 import CustomInspectorSelectedNodePane from './CustomInspectorSelectedNodePane.vue'
 
 import { watch, ref, provide, defineComponent } from '@vue/composition-api'
+import { BridgeEvents } from '@vue-devtools/shared-utils'
+import { useBridge } from '@front/features/bridge'
 import { useCurrentInspector } from './composable'
 
 export default defineComponent({
@@ -19,7 +21,8 @@ export default defineComponent({
     const {
       currentInspector: inspector,
       refreshInspector,
-      refreshTree
+      refreshTree,
+      selectNode
     } = useCurrentInspector()
 
     watch(() => inspector.value && inspector.value.treeFilter, () => {
@@ -37,10 +40,40 @@ export default defineComponent({
     const treeScroller = ref()
     provide('treeScroller', treeScroller)
 
+    // Keyboard
+
+    function selectNextChild (index) {
+      if (index + 1 < inspector.value.rootNodes.length) {
+        selectNode(inspector.value.rootNodes[index + 1])
+      }
+    }
+
+    function selectPreviousChild (index) {
+      if (index - 1 >= 0) {
+        selectNode(inspector.value.rootNodes[index - 1])
+      }
+    }
+
+    // Custom actions
+    const {
+      bridge
+    } = useBridge()
+
+    function executeCustomAction (index: number) {
+      bridge.send(BridgeEvents.TO_BACK_CUSTOM_INSPECTOR_ACTION, {
+        inspectorId: inspector.value.id,
+        appId: inspector.value.appId,
+        actionIndex: index
+      })
+    }
+
     return {
       inspector,
       refreshInspector,
-      treeScroller
+      treeScroller,
+      selectNextChild,
+      selectPreviousChild,
+      executeCustomAction
     }
   }
 })
@@ -65,9 +98,11 @@ export default defineComponent({
             class="flex-1 p-2 overflow-auto"
           >
             <CustomInspectorNode
-              v-for="node of inspector.rootNodes"
+              v-for="(node, index) of inspector.rootNodes"
               :key="node.id"
               :node="node"
+              @select-next-sibling="selectNextChild(index)"
+              @select-previous-sibling="selectPreviousChild(index)"
             />
           </div>
         </div>
@@ -79,6 +114,16 @@ export default defineComponent({
     </SplitPane>
 
     <portal to="header-end">
+      <template v-if="inspector.actions">
+        <VueButton
+          v-for="(action, index) of inspector.actions"
+          :key="index"
+          v-tooltip="action.tooltip"
+          class="icon-button flat"
+          :icon-left="action.icon"
+          @click="executeCustomAction(index)"
+        />
+      </template>
       <VueButton
         v-tooltip="'Refresh'"
         class="icon-button flat"

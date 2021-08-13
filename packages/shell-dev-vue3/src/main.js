@@ -3,6 +3,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import App from './App.vue'
 import App3 from './App3.vue'
 import TestPlugin from './devtools-plugin'
+import SimplePlugin from './devtools-plugin/simple'
 import store from './store'
 
 // eslint-disable-next-line no-extend-native
@@ -32,15 +33,28 @@ app.use(store)
 app.use(TestPlugin)
 app.mount('#app')
 
-createApp({
+const app2 = createApp({
+  name: 'App2',
   render: () => h('h1', 'App 2')
-}).mount('#app2')
+})
+app2.mount('#app2')
 
 createApp(App3).mount('#app3')
 
 createApp({
-  render: () => h('h1', 'Ghost app'),
+  render: () => h('button', {
+    onClick: () => app2.unmount()
+  }, 'Remove app 2'),
   devtools: {
     hide: true
   }
 }).mount('#ghost-app')
+
+setTimeout(() => {
+  const app = createApp({
+    name: 'DelayedApp',
+    render: () => h('h1', 'Delayed app')
+  })
+  app.use(SimplePlugin)
+  app.mount('#delay-app')
+}, 1000)

@@ -5,8 +5,9 @@ import TimelineEventListItem from './TimelineEventListItem.vue'
 import { computed, ref, watch, defineComponent } from '@vue/composition-api'
 import { getStorage, setStorage } from '@vue-devtools/shared-utils'
 import Defer from '@front/mixins/defer'
-import { useInspectedEvent, useSelectedEvent, selectEvent, useLayers } from './composable'
 import { useRoute, useRouter } from '@front/util/router'
+import { onKeyDown } from '@front/util/keyboard'
+import { useInspectedEvent, useSelectedEvent, selectEvent, useLayers } from './composable'
 
 const itemHeight = 34
 
@@ -32,7 +33,6 @@ export default defineComponent({
 
     const {
       selectedEvent,
-      selectedStackedEvents,
       selectedGroupEvents
     } = useSelectedEvent()
 
@@ -56,12 +56,12 @@ export default defineComponent({
     })
 
     if (!route.value.query.tabId) {
-      tabId.value = getStorage(STORAGE_TAB_ID, 'nearby')
+      tabId.value = getStorage(STORAGE_TAB_ID, 'all')
     }
 
     watch(selectedEvent, value => {
       if (value && !value.group && tabId.value === 'group') {
-        tabId.value = 'nearby'
+        tabId.value = 'all'
       }
     })
 
@@ -70,10 +70,8 @@ export default defineComponent({
         case 'group':
           return selectedGroupEvents.value
         case 'all':
-          return selectedLayer.value?.events ?? []
-        case 'nearby':
         default:
-          return selectedStackedEvents.value
+          return selectedLayer.value?.events ?? []
       }
     })
 
@@ -175,10 +173,28 @@ export default defineComponent({
       inspectedEvent.value = event
     }
 
+    // Keyboard
+
+    onKeyDown(event => {
+      const index = filteredEvents.value.indexOf(inspectedEvent.value)
+      if (event.key === 'ArrowDown') {
+        if (index < filteredEvents.value.length - 1) {
+          inspectEvent(filteredEvents.value[index + 1])
+        }
+      } else if (event.key === 'ArrowUp') {
+        if (index > 0) {
+          inspectEvent(filteredEvents.value[index - 1])
+        }
+      } else if (event.key === 'Enter' || event.key === ' ') {
+        if (inspectedEvent.value) {
+          selectEvent(inspectedEvent.value)
+        }
+      }
+    })
+
     return {
       selectedEvent,
       selectedLayer,
-      selectedStackedEvents,
       tabId,
       scroller,
       filter,
@@ -200,24 +216,19 @@ export default defineComponent({
   >
     <div class="flex-none flex flex-col items-stretch border-gray-200 dark:border-gray-800 border-b">
       <VueGroup
+        v-if="selectedEvent.group"
         v-model="tabId"
         indicator
         class="accent extend border-gray-200 dark:border-gray-800 border-b"
       >
         <VueGroupButton
-          value="nearby"
-          :label="selectedStackedEvents.length > 1 ? 'Nearby' : 'Selected'"
-          class="flat"
-        />
-        <VueGroupButton
-          v-if="selectedEvent.group"
-          value="group"
-          label="Group"
-          class="flat"
-        />
-        <VueGroupButton
           value="all"
           label="All"
+          class="flat"
+        />
+        <VueGroupButton
+          value="group"
+          label="Group"
           class="flat"
         />
       </VueGroup>
@@ -240,7 +251,7 @@ export default defineComponent({
       <template #default="{ item: event }">
         <TimelineEventListItem
           :event="event"
-          :selected="tabId !== 'nearby' && selectedStackedEvents.includes(event)"
+          :selected="selectedEvent === event"
           @inspect="inspectEvent(event)"
           @select="selectEvent(event)"
         />

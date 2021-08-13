@@ -1,18 +1,34 @@
 <script lang="ts">
 import StateInspector from '@front/features/inspector/StateInspector.vue'
 import EmptyPane from '@front/features/layout/EmptyPane.vue'
+import RenderCode from './RenderCode.vue'
+
+import { defineComponent, ref, watch } from '@vue/composition-api'
 import { useSelectedComponent } from './composable'
-import { defineComponent } from '@vue/composition-api'
 
 export default defineComponent({
   components: {
     StateInspector,
-    EmptyPane
+    EmptyPane,
+    RenderCode
   },
 
   setup () {
+    const selectedComponent = useSelectedComponent()
+    const showRenderCode = ref(false)
+
+    const { selectedComponentId } = selectedComponent
+    const inspector = ref()
+    watch(selectedComponentId, () => {
+      if (inspector.value?.$el) {
+        inspector.value.$el.scrollTop = 0
+      }
+    })
+
     return {
-      ...useSelectedComponent()
+      ...selectedComponent,
+      showRenderCode,
+      inspector
     }
   }
 })
@@ -21,7 +37,7 @@ export default defineComponent({
 <template>
   <div
     v-if="data"
-    class="h-full flex flex-col"
+    class="h-full flex flex-col relative"
   >
     <div class="px-2 h-10 border-b border-gray-200 dark:border-gray-800 flex items-center flex-none">
       <div class="flex items-baseline">
@@ -47,6 +63,13 @@ export default defineComponent({
       />
 
       <VueButton
+        v-tooltip="'Show render code'"
+        icon-left="code"
+        class="flat icon-button"
+        @click="showRenderCode = true"
+      />
+
+      <VueButton
         v-if="$isChrome"
         v-tooltip="'Inspect DOM'"
         icon-left="menu_open"
@@ -66,10 +89,27 @@ export default defineComponent({
       />
     </div>
 
+    <VueLoadingBar
+      v-if="data && data.id !== selectedComponentId"
+      unknown
+      class="primary ghost"
+    />
+
     <StateInspector
+      ref="inspector"
       :state="state"
       class="flex-1 overflow-y-auto"
+      :class="{
+        'grayscale': data && data.id !== selectedComponentId
+      }"
       @edit-state="editState"
+    />
+
+    <RenderCode
+      v-if="showRenderCode"
+      :instance-id="selectedComponentId"
+      class="absolute inset-0 w-full h-full z-10"
+      @close="showRenderCode = false"
     />
   </div>
 

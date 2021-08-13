@@ -12,6 +12,7 @@ export interface DevtoolsPluginApi {
   addInspector (options: CustomInspectorOptions)
   sendInspectorTree (inspectorId: string)
   sendInspectorState (inspectorId: string)
+  selectInspectorNode (inspectorId: string, nodeId: string)
   getComponentBounds (instance: ComponentInstance): Promise<ComponentBounds>
   getComponentName (instance: ComponentInstance): Promise<string>
   getComponentInstances (app: App): Promise<ComponentInstance[]>
@@ -76,6 +77,11 @@ export interface CustomInspectorOptions {
   treeFilterPlaceholder?: string
   stateFilterPlaceholder?: string
   noSelectionText?: string
+  actions?: {
+    icon: string
+    tooltip?: string
+    action: () => void | Promise<void>
+  }[]
 }
 
 export interface CustomInspectorNode {

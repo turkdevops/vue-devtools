@@ -1,6 +1,6 @@
 {
   "name": "@vue/devtools",
-  "version": "6.0.0-beta.11",
+  "version": "6.0.0-beta.15",
   "description": "StandAlone vue-devtools",
   "repository": {
     "url": "https://github.com/vuejs/vue-devtools.git",
@@ -15,7 +15,7 @@
   "scripts": {
     "start": "node bin.js",
     "dev": "webpack --watch",
-    "build": "webpack",
+    "build": "rm -rf ./build && webpack",
     "prepublishOnly": "npm run build"
   },
   "author": "",

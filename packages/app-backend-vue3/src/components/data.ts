@@ -2,7 +2,7 @@ import { BackendContext } from '@vue-devtools/app-backend-api'
 import { getInstanceName, getUniqueComponentId } from './util'
 import { camelize, get, set } from '@vue-devtools/shared-utils'
 import SharedData from '@vue-devtools/shared-utils/lib/shared-data'
-import { HookPayloads, Hooks, InspectedComponentData } from '@vue/devtools-api'
+import { ComponentInstance, HookPayloads, Hooks, InspectedComponentData } from '@vue/devtools-api'
 import { returnError } from '../util'
 
 /**
@@ -18,13 +18,14 @@ export function getInstanceDetails (instance: any, ctx: BackendContext): Inspect
 }
 
 function getInstanceState (instance) {
+  const mergedType = resolveMergedOptions(instance)
   return processProps(instance).concat(
     processState(instance),
     processSetupState(instance),
-    processComputed(instance),
+    processComputed(instance, mergedType),
     processAttrs(instance),
     processProvide(instance),
-    processInject(instance),
+    processInject(instance, mergedType),
     processRefs(instance)
   )
 }
@@ -120,26 +121,38 @@ function processState (instance) {
 function processSetupState (instance) {
   const raw = instance.devtoolsRawSetupState || {}
   return Object.keys(instance.setupState)
-    .map(key => ({
-      key,
-      type: 'setup',
-      value: returnError(() => instance.setupState[key]),
-      ...getSetupStateExtra(raw[key])
-    }))
-}
+    .map(key => {
+      const value = returnError(() => instance.setupState[key])
 
-function getSetupStateExtra (raw) {
-  if (!raw) return {}
+      const rawData = raw[key]
 
-  const info = getSetupStateInfo(raw)
+      let result: any
 
-  const objectType = info.computed ? 'Computed' : info.ref ? 'Ref' : info.reactive ? 'Reactive' : null
+      if (rawData) {
+        const info = getSetupStateInfo(rawData)
 
-  return {
-    ...objectType ? { objectType } : {},
-    ...raw.effect ? { raw: raw.effect.raw.toString() } : {},
-    editable: (info.ref || info.computed || info.reactive) && !info.readonly
-  }
+        const objectType = info.computed ? 'Computed' : info.ref ? 'Ref' : info.reactive ? 'Reactive' : null
+        const isState = info.ref || info.computed || info.reactive
+        const isOther = typeof value === 'function' || typeof value?.render === 'function'
+
+        result = {
+          ...objectType ? { objectType } : {},
+          ...raw.effect ? { raw: raw.effect.raw.toString() } : {},
+          editable: isState && !info.readonly,
+          type: isOther ? 'setup (other)' : 'setup'
+        }
+      } else {
+        result = {
+          type: 'setup'
+        }
+      }
+
+      return {
+        key,
+        value,
+        ...result
+      }
+    })
 }
 
 function isRef (raw: any): boolean {
@@ -173,8 +186,8 @@ function getSetupStateInfo (raw: any) {
  * @param {Vue} instance
  * @return {Array}
  */
-function processComputed (instance) {
-  const type = instance.type
+function processComputed (instance, mergedType) {
+  const type = mergedType
   const computed = []
   const defs = type.computed || {}
   // use for...in here because if 'computed' is not defined
@@ -215,17 +228,17 @@ function processProvide (instance) {
     }))
 }
 
-function processInject (instance) {
-  if (!instance.type || !instance.type.inject) return []
+function processInject (instance, mergedType) {
+  if (!mergedType?.inject) return []
   let keys = []
-  if (Array.isArray(instance.type.inject)) {
-    keys = instance.type.inject.map(key => ({
+  if (Array.isArray(mergedType.inject)) {
+    keys = mergedType.inject.map(key => ({
       key,
       originalKey: key
     }))
   } else {
-    keys = Object.keys(instance.type.inject).map(key => {
-      const value = instance.type.inject[key]
+    keys = Object.keys(mergedType.inject).map(key => {
+      const value = mergedType.inject[key]
       let originalKey
       if (typeof value === 'string') {
         originalKey = value
@@ -322,4 +335,48 @@ export function getCustomInstanceDetails (instance) {
       }
     }
   }
+}
+
+function resolveMergedOptions (
+  instance: ComponentInstance
+) {
+  const raw = instance.type
+  const { mixins, extends: extendsOptions } = raw
+  const globalMixins = instance.appContext.mixins
+  if (!globalMixins.length && !mixins && !extendsOptions) return raw
+  const options = {}
+  globalMixins.forEach(m => mergeOptions(options, m, instance))
+  mergeOptions(options, raw, instance)
+  return options
+}
+
+function mergeOptions (
+  to: any,
+  from: any,
+  instance: ComponentInstance
+) {
+  if (!from) return to
+
+  if (typeof from === 'function') {
+    from = from.options
+  }
+
+  const { mixins, extends: extendsOptions } = from
+
+  extendsOptions && mergeOptions(to, extendsOptions, instance)
+  mixins &&
+    mixins.forEach((m) =>
+      mergeOptions(to, m, instance)
+    )
+
+  for (const key of ['computed', 'inject']) {
+    if (Object.prototype.hasOwnProperty.call(from, key)) {
+      if (!to[key]) {
+        to[key] = from[key]
+      } else {
+        Object.assign(to[key], from[key])
+      }
+    }
+  }
+  return to
 }

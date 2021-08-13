@@ -120,8 +120,16 @@ export class DevtoolsHookable implements Hookable<BackendContext> {
     this.hook(Hooks.GET_COMPONENT_DEVTOOLS_OPTIONS, handler, PluginPermission.COMPONENTS)
   }
 
+  getComponentRenderCode (handler: Handler<HookPayloads[Hooks.GET_COMPONENT_RENDER_CODE]>) {
+    this.hook(Hooks.GET_COMPONENT_RENDER_CODE, handler, PluginPermission.COMPONENTS)
+  }
+
   inspectTimelineEvent (handler: Handler<HookPayloads[Hooks.INSPECT_TIMELINE_EVENT]>) {
     this.hook(Hooks.INSPECT_TIMELINE_EVENT, handler, PluginPermission.TIMELINE)
+  }
+
+  timelineCleared (handler: Handler<HookPayloads[Hooks.TIMELINE_CLEARED]>) {
+    this.hook(Hooks.TIMELINE_CLEARED, handler, PluginPermission.TIMELINE)
   }
 
   getInspectorTree (handler: Handler<HookPayloads[Hooks.GET_INSPECTOR_TREE]>) {

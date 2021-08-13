@@ -2,8 +2,14 @@ module.exports = {
   title: 'Vue Devtools',
   description: 'Browser devtools extension for debugging Vue.js applications',
 
+  head: [
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
+    ['link', { rel: 'icon', type: 'image/png', href: '/favicon.png' }],
+  ],
+
   themeConfig: {
     repo: 'vuejs/vue-devtools',
+    logo: '/logo-header.svg',
     docsDir: 'docs',
     docsBranch: 'next',
     editLinks: true,
@@ -36,6 +42,14 @@ module.exports = {
             {
               text: 'Open in editor',
               link: '/guide/open-in-editor',
+            },
+            {
+              text: 'F.A.Q.',
+              link: '/guide/faq',
+            },
+            {
+              text: 'Contributing',
+              link: '/guide/contributing',
             },
           ],
         },

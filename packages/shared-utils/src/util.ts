@@ -1,12 +1,12 @@
 import path from 'path'
+import { CustomState } from '@vue/devtools-api'
 import { stringifyCircularAutoChunks, parseCircularAutoChunks } from './transfer'
 import {
   getInstanceMap,
   getCustomInstanceDetails,
   getCustomRouterDetails,
   getCustomStoreDetails,
-  isVueInstance,
-  backendInjections
+  isVueInstance
 } from './backend'
 import SharedData from './shared-data'
 import { isChrome, target } from './env'
@@ -137,6 +137,38 @@ class EncodeCache {
 
 const encodeCache = new EncodeCache()
 
+class ReviveCache {
+  map: Map<number, any>
+  index: number
+  size: number
+  maxSize: number
+
+  constructor (maxSize: number) {
+    this.maxSize = maxSize
+    this.map = new Map()
+    this.index = 0
+    this.size = 0
+  }
+
+  cache (value: any) {
+    const currentIndex = this.index
+    this.map.set(currentIndex, value)
+    this.size++
+    if (this.size > this.maxSize) {
+      this.map.delete(currentIndex - this.size)
+      this.size--
+    }
+    this.index++
+    return currentIndex
+  }
+
+  read (id: number) {
+    return this.map.get(id)
+  }
+}
+
+const reviveCache = new ReviveCache(1000)
+
 export function stringify (data) {
   // Create a fresh cache for each serialization
   encodeCache.clear()
@@ -196,6 +228,8 @@ function replacer (key) {
       return encodeCache.cache(val, () => getCustomComponentDefinitionDetails(val))
     } else if (val.constructor && val.constructor.name === 'VNode') {
       return `[native VNode <${val.tag}>]`
+    } else if (val instanceof HTMLElement) {
+      return encodeCache.cache(val, () => getCustomHTMLElementDetails(val))
     }
   } else if (Number.isNaN(val)) {
     return NAN
@@ -229,7 +263,7 @@ export function reviveMap (val) {
   const list = val._custom.value
   for (let i = 0; i < list.length; i++) {
     const { key, value } = list[i]
-    result.set(key, reviver(null, value))
+    result.set(key, revive(value))
   }
   return result
 }
@@ -251,7 +285,7 @@ export function reviveSet (val) {
   const list = val._custom.value
   for (let i = 0; i < list.length; i++) {
     const value = list[i]
-    result.add(reviver(null, value))
+    result.add(revive(value))
   }
   return result
 }
@@ -266,7 +300,7 @@ function basename (filename, ext) {
 }
 
 export function getComponentName (options) {
-  const name = options.name || options._componentTag
+  const name = options.displayName || options.name || options._componentTag
   if (name) {
     return name
   }
@@ -299,7 +333,8 @@ export function getCustomComponentDefinitionDetails (def) {
   }
 }
 
-export function getCustomFunctionDetails (func) {
+// eslint-disable-next-line @typescript-eslint/ban-types
+export function getCustomFunctionDetails (func: Function): CustomState {
   let string = ''
   let matches = null
   try {
@@ -317,9 +352,39 @@ export function getCustomFunctionDetails (func) {
   return {
     _custom: {
       type: 'function',
-      display: `<span>ƒ</span> ${escape(name)}${args}`
+      display: `<span>f</span> ${escape(name)}${args}`,
+      _reviveId: reviveCache.cache(func)
     }
   }
+}
+
+export function getCustomHTMLElementDetails (value: HTMLElement): CustomState {
+  return {
+    _custom: {
+      type: 'HTMLElement',
+      display: `<span class="opacity-30">&lt;</span><span class="text-blue-500">${value.tagName.toLowerCase()}</span><span class="opacity-30">&gt;</span>`,
+      value: namedNodeMapToObject(value.attributes),
+      actions: [
+        {
+          icon: 'input',
+          tooltip: 'Log element to console',
+          action: () => {
+            console.log(value)
+          }
+        }
+      ]
+    }
+  }
+}
+
+function namedNodeMapToObject (map: NamedNodeMap) {
+  const result: any = {}
+  const l = map.length
+  for (let i = 0; i < l; i++) {
+    const node = map.item(i)
+    result[node.name] = node.value
+  }
+  return result
 }
 
 export function getCustomRefDetails (instance, key, ref) {
@@ -375,12 +440,17 @@ export function revive (val) {
   } else if (val === NAN) {
     return NaN
   } else if (val && val._custom) {
-    if (val._custom.type === 'component') {
-      return getInstanceMap().get(val._custom.id)
-    } else if (val._custom.type === 'map') {
+    const { _custom: custom }: CustomState = val
+    if (custom.type === 'component') {
+      return getInstanceMap().get(custom.id)
+    } else if (custom.type === 'map') {
       return reviveMap(val)
-    } else if (val._custom.type === 'set') {
+    } else if (custom.type === 'set') {
       return reviveSet(val)
+    } else if (custom._reviveId) {
+      return reviveCache.read(custom._reviveId)
+    } else {
+      return revive(custom.value)
     }
   } else if (symbolRE.test(val)) {
     const [, string] = symbolRE.exec(val)

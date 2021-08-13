@@ -23,11 +23,13 @@ import {
 } from './composable'
 import { useApps } from '@front/features/apps'
 import { onKeyUp } from '@front/util/keyboard'
-import { useDarkMode } from '@front/util/theme'
 import SharedData from '@utils/shared-data'
+import { useDarkMode } from '@front/util/theme'
+import { dimColor, boostColor } from '@front/util/color'
 
 const LAYER_SIZE = 16
 const GROUP_SIZE = 6
+const MIN_CAMERA_SIZE = 10
 
 installUnsafeEval(PIXI)
 
@@ -286,7 +288,7 @@ export default defineComponent({
     }
 
     function computeEventVerticalPosition (event: TimelineEvent) {
-      const offset = event.layer.groupsOnly ? 0 : 100
+      const offset = event.layer.groupsOnly ? 0 : 12
 
       let y = 0
       if (event.group && event !== event.group.firstEvent) {
@@ -314,13 +316,13 @@ export default defineComponent({
               (
                 // Horizontal intersection (first event)
                 (
-                  firstEvent.time >= otherGroup.firstEvent.time - offset &&
-                  firstEvent.time <= otherGroup.lastEvent.time + offset + lastOffset
+                  getEventPosition(firstEvent) >= getEventPosition(otherGroup.firstEvent) - offset &&
+                  getEventPosition(firstEvent) <= getEventPosition(otherGroup.lastEvent) + offset + lastOffset
                 ) ||
                 // Horizontal intersection (last event)
                 (
-                  lastEvent.time >= otherGroup.firstEvent.time - offset - lastOffset &&
-                  lastEvent.time <= otherGroup.lastEvent.time + offset
+                  getEventPosition(lastEvent) >= getEventPosition(otherGroup.firstEvent) - offset - lastOffset &&
+                  getEventPosition(lastEvent) <= getEventPosition(otherGroup.lastEvent) + offset
                 )
               )
             ) {
@@ -350,6 +352,7 @@ export default defineComponent({
           const newLayerHeight = event.layer.height = y + 1
           if (oldLayerHeight !== newLayerHeight) {
             updateLayerPositions()
+            drawLayerBackgroundEffects()
           }
         }
       }
@@ -367,11 +370,6 @@ export default defineComponent({
       event.container = eventContainer
       layerContainer.addChild(eventContainer)
 
-      // Graphics
-      const g = new PIXI.Graphics()
-      event.g = g
-      eventContainer.addChild(g)
-
       // Group graphics
       if (event.group) {
         if (event.group.firstEvent === event) {
@@ -382,9 +380,14 @@ export default defineComponent({
         } else if (event.group.lastEvent === event) {
           drawEventGroup(event.group.firstEvent)
           // We need to check for collisions again
-          queueEventsUpdate()
+          Vue.nextTick(() => queueEventsUpdate())
         }
       }
+
+      // Graphics
+      const g = new PIXI.Graphics()
+      event.g = g
+      eventContainer.addChild(g)
 
       events.push(event)
 
@@ -397,7 +400,7 @@ export default defineComponent({
     function initEvents () {
       for (const k in layersMap) {
         const { layer, container } = layersMap[k]
-        for (const event of layer.displayedEvents) {
+        for (const event of layer.events) {
           addEvent(event, container)
         }
       }
@@ -441,12 +444,6 @@ export default defineComponent({
     onEventAdd((event: TimelineEvent) => {
       if (event.appId !== 'all' && event.appId !== currentAppId.value) return
 
-      if (event.stackParent) {
-        // The event graphics might grow
-        refreshEventGraphics(event.stackParent)
-        return
-      }
-
       const layer = layersMap[event.layer.id]
       if (layer) {
         addEvent(event, layer.container)
@@ -465,6 +462,10 @@ export default defineComponent({
     }
 
     function updateEvents () {
+      for (const layer of layers.value) {
+        layer.height = 1
+      }
+      updateLayerPositions()
       queueEventPositionUpdate(...events)
       for (const event of events) {
         if (event.groupG) {
@@ -488,7 +489,7 @@ export default defineComponent({
         let y = 0
         for (const layer of layers.value) {
           y += (layer.height + 1) * LAYER_SIZE
-          if (targetY < y) {
+          if (targetY - verticalScrollingContainer.y < y) {
             let distance = Number.POSITIVE_INFINITY
             for (const e of layer.events) {
               if (isEventIgnored(e)) continue
@@ -525,32 +526,33 @@ export default defineComponent({
     function drawEvent (selected: boolean, event: TimelineEvent) {
       if (event) {
         let color = event.layer.color
-        for (const subEvent of event.stackedEvents) {
-          if (subEvent.logType === 'error') {
-            color = 0xE53E3E
-            break
-          } else if (subEvent.logType === 'warning') {
-            color = 0xECC94B
-          }
+        if (event.logType === 'error') {
+          color = 0xE53E3E
+        } else if (event.logType === 'warning') {
+          color = 0xECC94B
         }
 
         if (event.g) {
           /** @type {PIXI.Graphics} */
           const g = event.g
-          let size = event.stackedEvents.length > 1 ? 4 : 3
+          let size = 3
           g.clear()
           if (!event.layer.groupsOnly) {
             if (selected) {
               // Border-only style
-              size -= 0.5
-              g.lineStyle(1, color)
-              g.beginFill(darkMode.value ? 0x0b1015 : 0xffffff)
-              event.container.zIndex = 999999999
+              size--
+              g.lineStyle(2, boostColor(color, darkMode.value))
+              g.beginFill(dimColor(color, darkMode.value))
+              if (!event.group || event.group.firstEvent !== event) {
+                event.container.zIndex = 999999999
+              }
             } else {
               g.beginFill(color)
-              event.container.zIndex = size
+              if (!event.group || event.group.firstEvent !== event) {
+                event.container.zIndex = size
+              }
             }
-            g.drawCircle(0, 0, size)
+            g.drawCircle(0, 0, size + (selected ? 1 : 0))
           } else {
             drawEventGroup(event)
           }
@@ -638,11 +640,16 @@ export default defineComponent({
         const g = event.groupG
         g.clear()
         const size = getEventPosition(event.group.lastEvent) - getEventPosition(event.group.firstEvent)
-        if (event.layer.groupsOnly && !drawAsSelected) {
-          g.beginFill(event.layer.color, 0.5)
+        if (event.layer.groupsOnly) {
+          if (drawAsSelected) {
+            g.lineStyle(2, boostColor(event.layer.color, darkMode.value))
+            g.beginFill(dimColor(event.layer.color, darkMode.value, 30))
+          } else {
+            g.beginFill(event.layer.color, 0.5)
+          }
         } else {
-          g.lineStyle(1, event.layer.color, 0.5)
-          g.beginFill(event.layer.color, 0.1)
+          g.lineStyle(1, dimColor(event.layer.color, darkMode.value))
+          g.beginFill(dimColor(event.layer.color, darkMode.value, 25))
         }
         if (event.layer.groupsOnly) {
           g.drawRect(0, -LAYER_SIZE / 2, size - 1, LAYER_SIZE - 1)
@@ -655,7 +662,6 @@ export default defineComponent({
         if (event.layer.groupsOnly && event.title && size > 32) {
           let t = event.groupT
           if (!t) {
-            console.log('create group text')
             t = event.groupT = new PIXI.Text(`${event.title} ${event.subtitle}`, {
               fontSize: 10,
               fill: darkMode.value ? 0xffffff : 0
@@ -728,13 +734,20 @@ export default defineComponent({
     function drawTimeGrid () {
       if (!timeGrid.visible || !app.view.width) return
 
-      const ratio = (endTime.value - startTime.value) / app.view.width
+      const size = endTime.value - startTime.value
+      const ratio = size / app.view.width
       let timeInterval = 10
       let width = timeInterval / ratio
 
-      while (width < 20) {
-        timeInterval *= 10
-        width *= 10
+      if (size <= MIN_CAMERA_SIZE * 3) {
+        // Every ms
+        timeInterval = 1
+        width = timeInterval / ratio
+      } else {
+        while (width < 20) {
+          timeInterval *= 10
+          width *= 10
+        }
       }
 
       const offset = startTime.value % timeInterval / ratio
@@ -793,8 +806,8 @@ export default defineComponent({
         const center = size * centerRatio + startTime.value
 
         let newSize = size + event.deltaY / viewWidth * size * 2
-        if (newSize < 10) {
-          newSize = 10
+        if (newSize < MIN_CAMERA_SIZE) {
+          newSize = MIN_CAMERA_SIZE
         }
 
         let start = center - newSize * centerRatio
@@ -895,6 +908,7 @@ export default defineComponent({
   <div
     ref="wrapper"
     class="relative overflow-hidden"
+    data-id="timeline-view-wrapper"
     @wheel="onMouseWheel"
     @mousemove="onMouseMove"
     @mouseout="onMouseOut"

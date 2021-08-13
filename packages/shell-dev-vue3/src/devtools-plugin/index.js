@@ -130,12 +130,26 @@ export default {
         }
       })
 
+      api.on.timelineCleared(() => {
+        console.log('timeline is cleared!')
+      })
+
       api.addInspector({
         id: 'test-inspector',
         label: 'Test inspector',
         icon: 'tab_unselected',
         treeFilterPlaceholder: 'Search for test...',
-        noSelectionText: 'Select a node to view details'
+        noSelectionText: 'Select a node to view details',
+        actions: [
+          {
+            icon: 'star',
+            tooltip: 'Test custom action',
+            action: () => {
+              console.log('Meow! 🐱')
+              api.selectInspectorNode('test-inspector', 'child')
+            }
+          }
+        ]
       })
 
       api.addInspector({

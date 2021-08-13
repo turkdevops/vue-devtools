@@ -20,47 +20,19 @@ export function layerFactory (options: LayerFromBackend): Layer {
   return {
     ...options,
     events: [],
-    displayedEvents: [],
-    eventTimeMap: {},
-    groupsMap: {},
+    eventsMap: {},
     groups: [],
+    groupsMap: {},
     height: 1,
-    lastInspectedEvent: null
+    lastInspectedEvent: null,
+    loaded: false
   }
-}
-
-function builtinLayersFactory () {
-  return ([
-    {
-      id: 'mouse',
-      label: 'Mouse',
-      color: 0xA451AF
-    },
-    {
-      id: 'keyboard',
-      label: 'Keyboard',
-      color: 0x8151AF
-    },
-    {
-      id: 'component-event',
-      label: 'Component events',
-      color: 0x41B883
-    },
-    {
-      id: 'performance',
-      label: 'Performance',
-      color: 0x41b86a,
-      groupsOnly: true,
-      skipScreenshots: true,
-      ignoreNoDurationGroups: true
-    }
-  ] as LayerFromBackend[]).map(options => layerFactory(options))
 }
 
 export function getLayers (appId: number) {
   let layers = layersPerApp.value[appId]
   if (!layers) {
-    layers = builtinLayersFactory()
+    layers = []
     Vue.set(layersPerApp.value, appId, layers)
     // Read the property again to make it reactive
     layers = layersPerApp.value[appId]
@@ -111,7 +83,6 @@ export function useLayers () {
 
     if (!event) event = layer.events.length ? layer.events[layer.events.length - 1] : null
     inspectedEvent.value = event
-    if (event?.stackParent) event = event.stackParent
     selectedEvent.value = event
 
     router.push({

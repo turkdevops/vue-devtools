@@ -48,6 +48,8 @@ export enum BridgeEvents {
   TO_FRONT_COMPONENT_PICK_CANCELED = 'f:component:pick-canceled',
   TO_BACK_COMPONENT_INSPECT_DOM = 'b:component:inspect-dom',
   TO_FRONT_COMPONENT_INSPECT_DOM = 'f:component:inspect-dom',
+  TO_BACK_COMPONENT_RENDER_CODE = 'b:component:render-code',
+  TO_FRONT_COMPONENT_RENDER_CODE = 'f:component:render-code',
 
   // Timeline
   TO_FRONT_TIMELINE_EVENT = 'f:timeline:event',
@@ -58,6 +60,8 @@ export enum BridgeEvents {
   TO_BACK_TIMELINE_CLEAR = 'b:timeline:clear',
   TO_BACK_TIMELINE_EVENT_DATA = 'b:timeline:event-data',
   TO_FRONT_TIMELINE_EVENT_DATA = 'f:timeline:event-data',
+  TO_BACK_TIMELINE_LAYER_LOAD_EVENTS = 'b:timeline:layer-load-events',
+  TO_FRONT_TIMELINE_LAYER_LOAD_EVENTS = 'f:timeline:layer-load-events',
 
   // Plugins
   TO_BACK_DEVTOOLS_PLUGIN_LIST = 'b:devtools-plugin:list',
@@ -72,7 +76,12 @@ export enum BridgeEvents {
   TO_FRONT_CUSTOM_INSPECTOR_TREE = 'f:custom-inspector:tree',
   TO_BACK_CUSTOM_INSPECTOR_STATE = 'b:custom-inspector:state',
   TO_FRONT_CUSTOM_INSPECTOR_STATE = 'f:custom-inspector:state',
-  TO_BACK_CUSTOM_INSPECTOR_EDIT_STATE = 'b:custom-inspector:edit-state'
+  TO_BACK_CUSTOM_INSPECTOR_EDIT_STATE = 'b:custom-inspector:edit-state',
+  TO_BACK_CUSTOM_INSPECTOR_ACTION = 'b:custom-inspector:action',
+  TO_FRONT_CUSTOM_INSPECTOR_SELECT_NODE = 'f:custom-inspector:select-node',
+
+  // Custom state
+  TO_BACK_CUSTOM_STATE_ACTION = 'b:custom-state:action'
 }
 
 export enum BridgeSubscriptions {
@@ -97,6 +106,7 @@ export enum HookEvents {
   CUSTOM_INSPECTOR_ADD = 'custom-inspector:add',
   CUSTOM_INSPECTOR_SEND_TREE = 'custom-inspector:send-tree',
   CUSTOM_INSPECTOR_SEND_STATE = 'custom-inspector:send-state',
+  CUSTOM_INSPECTOR_SELECT_NODE = 'custom-inspector:select-node',
   PERFORMANCE_START = 'perf:start',
   PERFORMANCE_END = 'perf:end',
   /**

@@ -2,11 +2,13 @@ import { ref, computed, watch } from '@vue/composition-api'
 import { BridgeEvents, Bridge } from '@vue-devtools/shared-utils'
 import { useBridge, getBridge } from '@front/features/bridge'
 import { useRoute, useRouter } from '@front/util/router'
+import { fetchLayers } from '../timeline/composable'
 
 export interface App {
   id: number
   name: string
   version: string
+  iframe: string
 }
 
 const apps = ref<App[]>([])
@@ -79,6 +81,7 @@ function fetchApps () {
 export function setupAppsBridgeEvents (bridge: Bridge) {
   bridge.on(BridgeEvents.TO_FRONT_APP_ADD, ({ appRecord }) => {
     addApp(appRecord)
+    fetchLayers()
   })
 
   bridge.on(BridgeEvents.TO_FRONT_APP_REMOVE, ({ id }) => {

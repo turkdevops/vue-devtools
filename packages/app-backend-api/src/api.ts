@@ -175,6 +175,18 @@ export class DevtoolsApi {
     return payload.options || {}
   }
 
+  async getComponentRenderCode (instance: ComponentInstance): Promise<{
+    code: string
+  }> {
+    const payload = await this.callHook(Hooks.GET_COMPONENT_RENDER_CODE, {
+      componentInstance: instance,
+      code: null
+    })
+    return {
+      code: payload.code
+    }
+  }
+
   async inspectTimelineEvent (eventData: TimelineEventOptions & WithId, app: App) {
     const payload = await this.callHook(Hooks.INSPECT_TIMELINE_EVENT, {
       event: eventData.event,
@@ -184,6 +196,10 @@ export class DevtoolsApi {
       all: eventData.all
     })
     return payload.data
+  }
+
+  async clearTimeline () {
+    await this.callHook(Hooks.TIMELINE_CLEARED, {})
   }
 
   async getInspectorTree (inspectorId: string, app: App, filter: string) {
@@ -206,13 +222,14 @@ export class DevtoolsApi {
     return payload.state
   }
 
-  async editInspectorState (inspectorId: string, app: App, nodeId: string, dotPath: string, state: EditStatePayload) {
+  async editInspectorState (inspectorId: string, app: App, nodeId: string, dotPath: string, type: string, state: EditStatePayload) {
     const arrayPath = dotPath.split('.')
     await this.callHook(Hooks.EDIT_INSPECTOR_STATE, {
       inspectorId,
       app,
       nodeId,
       path: arrayPath,
+      type,
       state,
       set: (object, path = arrayPath, value = state.value, cb?) => set(object, path, value, cb || createDefaultSetCallback(state))
     })
@@ -292,6 +309,13 @@ export class DevtoolsPluginApiInstance implements DevtoolsPluginApi {
     if (!this.enabled || !this.hasPermission(PluginPermission.CUSTOM_INSPECTOR)) return false
 
     this.ctx.hook.emit(HookEvents.CUSTOM_INSPECTOR_SEND_STATE, inspectorId, this.plugin)
+    return true
+  }
+
+  selectInspectorNode (inspectorId: string, nodeId: string) {
+    if (!this.enabled || !this.hasPermission(PluginPermission.CUSTOM_INSPECTOR)) return false
+
+    this.ctx.hook.emit(HookEvents.CUSTOM_INSPECTOR_SELECT_NODE, inspectorId, nodeId, this.plugin)
     return true
   }
 

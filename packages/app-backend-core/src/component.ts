@@ -3,8 +3,11 @@ import { AppRecord, BackendContext } from '@vue-devtools/app-backend-api'
 import { getAppRecord } from './app'
 import { App, EditStatePayload } from '@vue/devtools-api'
 
-export async function sendComponentTreeData (appRecord: AppRecord, instanceId: string, filter = '', ctx: BackendContext) {
-  if (!instanceId) return
+const MAX_$VM = 10
+const $vmQueue = []
+
+export async function sendComponentTreeData (appRecord: AppRecord, instanceId: string, filter = '', maxDepth: number = null, ctx: BackendContext) {
+  if (!instanceId || appRecord !== ctx.currentAppRecord) return
   const instance = getComponentInstance(appRecord, instanceId, ctx)
   if (!instance) {
     ctx.bridge.send(BridgeEvents.TO_FRONT_COMPONENT_TREE, {
@@ -14,7 +17,9 @@ export async function sendComponentTreeData (appRecord: AppRecord, instanceId: s
     })
   } else {
     if (filter) filter = filter.toLowerCase()
-    const maxDepth = instance === ctx.currentAppRecord.rootInstance ? 2 : 1
+    if (maxDepth == null) {
+      maxDepth = instance === ctx.currentAppRecord.rootInstance ? 2 : 1
+    }
     const payload = {
       instanceId,
       treeData: stringify(await ctx.api.walkComponentTree(instance, maxDepth, filter))
@@ -24,7 +29,7 @@ export async function sendComponentTreeData (appRecord: AppRecord, instanceId: s
 }
 
 export async function sendSelectedComponentData (appRecord: AppRecord, instanceId: string, ctx: BackendContext) {
-  if (!instanceId) return
+  if (!instanceId || appRecord !== ctx.currentAppRecord) return
   markSelectedInstance(instanceId, ctx)
   const instance = getComponentInstance(appRecord, instanceId, ctx)
   if (!instance) {
@@ -32,7 +37,19 @@ export async function sendSelectedComponentData (appRecord: AppRecord, instanceI
   } else {
     // Expose instance on window
     if (typeof window !== 'undefined') {
-      (window as any).$vm = instance
+      const win = (window as any)
+      win.$vm = instance
+
+      // $vm0, $vm1, $vm2, ...
+      if ($vmQueue[0] !== instance) {
+        if ($vmQueue.length >= MAX_$VM) {
+          $vmQueue.pop()
+        }
+        for (let i = $vmQueue.length; i > 0; i--) {
+          win[`$vm${i}`] = $vmQueue[i] = $vmQueue[i - 1]
+        }
+        win.$vm0 = $vmQueue[0] = instance
+      }
     }
     if (process.env.NODE_ENV !== 'production') {
       console.log('inspect', instance)
@@ -71,10 +88,17 @@ export async function editComponentState (instanceId: string, dotPath: string, t
   }
 }
 
-export function getComponentId (app: App, uid: number, ctx: BackendContext) {
-  const appRecord = getAppRecord(app, ctx)
-  if (!appRecord) return null
-  return `${appRecord.id}:${uid === 0 ? 'root' : uid}`
+export async function getComponentId (app: App, uid: number, ctx: BackendContext) {
+  try {
+    const appRecord = await getAppRecord(app, ctx)
+    if (!appRecord) return null
+    return `${appRecord.id}:${uid === 0 ? 'root' : uid}`
+  } catch (e) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.error(e)
+    }
+    return null
+  }
 }
 
 export function getComponentInstance (appRecord: AppRecord, instanceId: string, ctx: BackendContext) {

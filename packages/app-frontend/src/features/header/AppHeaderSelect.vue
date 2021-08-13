@@ -27,10 +27,6 @@ export default defineComponent({
     const isShown = ref(false)
     const isShowApplied = ref(false)
 
-    watch(isShown, value => {
-      console.log('isShown', value)
-    })
-
     /**
      * Delayed open should only happen on mouseover.
      * Will be overriden when clicking
@@ -249,6 +245,11 @@ export default defineComponent({
 }
 
 .vue-ui-dropdown-button /deep/ {
+  min-height: 32px;
+  height: auto;
+  padding-top: 6px;
+  padding-bottom: 6px;
+
   .default-slot {
     flex: 1;
   }

@@ -13,6 +13,10 @@ export interface InspectorFromBackend {
   treeFilterPlaceholder: string
   stateFilterPlaceholder: string
   noSelectionText: string
+  actions?: {
+    icon: string
+    tooltip?: string
+  }[]
 }
 
 export interface Inspector extends InspectorFromBackend {
@@ -22,6 +26,7 @@ export interface Inspector extends InspectorFromBackend {
   selectedNode: any
   stateFilter: string
   state: any
+  expandedMap: Record<string, boolean>
 }
 
 const SELECTED_NODES_STORAGE = 'custom-inspector-selected-nodes'
@@ -35,7 +40,8 @@ function inspectorFactory (options: InspectorFromBackend): Inspector {
     selectedNodeId: selectedIdsStorage[options.id] || null,
     selectedNode: null,
     stateFilter: '',
-    state: null
+    state: null,
+    expandedMap: {}
   }
 }
 
@@ -96,12 +102,13 @@ export function useCurrentInspector () {
     fetchState(currentInspector.value)
   }
 
-  function editState (path: string, payload: any) {
+  function editState (path: string, payload: any, type: string) {
     bridge.send(BridgeEvents.TO_BACK_CUSTOM_INSPECTOR_EDIT_STATE, {
       inspectorId: currentInspector.value.id,
       appId: currentInspector.value.appId,
       nodeId: currentInspector.value.selectedNodeId,
       path,
+      type,
       payload
     })
   }
@@ -179,6 +186,21 @@ export function setupCustomInspectorBridgeEvents (bridge: Bridge) {
     }
 
     inspector.state = parse(state)
+  })
+
+  bridge.on(BridgeEvents.TO_FRONT_CUSTOM_INSPECTOR_SELECT_NODE, ({ appId, inspectorId, nodeId }) => {
+    const inspector = inspectors.value.find(i => i.id === inspectorId && i.appId === appId)
+
+    if (!inspector) {
+      console.error(`Inspector ${inspectorId} not found`)
+      return
+    }
+
+    inspector.selectedNodeId = nodeId
+    inspector.selectedNode = null
+    selectedIdsStorage[inspector.id] = nodeId
+    setStorage(SELECTED_NODES_STORAGE, selectedIdsStorage)
+    fetchState(inspector)
   })
 
   resetInspectors()
